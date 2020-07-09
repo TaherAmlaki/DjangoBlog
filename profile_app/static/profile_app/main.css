@@ -1,0 +1,281 @@
+html, body {
+  background: #E6ECF2;
+  margin: 0px;
+  font-family: 'Roboto', sans-serif;
+  min-height: 100%;
+  width: 100%;
+}
+
+.my-rounded-img {
+  border-radius: 7%;
+}
+
+.my-header{
+    margin: 0px;
+    width: 100%;
+}
+
+.my-header .my-navbar{
+    background: rgba(0,0,0,0.5) !important;
+    margin-bottom: 5px;
+}
+
+.my-navbar .navbar-brand{
+    color: white;
+    font-size: 135%;
+}
+
+.my-navbar .nav-item{
+  color: white;
+  font-size: 120%;
+}
+
+.navbar-toggler {
+  color: white;
+}
+
+.home-container .home-top-container {
+  height: auto;
+  width: 100%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  margin-bottom: 0px;
+}
+
+.home-body {
+  width: 80%;
+  height: auto;
+  margin: 30px 10px;
+  padding: 10px;
+  background-color: #E6ECF2;
+  position: absolute;
+  left: 5%;
+}
+
+#home-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: black;
+}
+
+#contact-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: linear-gradient(#25364f, #4d71a5, #9bc4ff);
+}
+
+.title-card {
+  height: 20rem;
+}
+
+.title-card-title{
+  font-size: 30px;
+  color: white;
+}
+
+.title-card-text{
+  color: white;
+  font-size: 20px;
+}
+
+.home-sections-col {
+  margin-right: 0;
+  margin-top: 0;
+}
+
+.home-about-me-media {
+  padding-top: 1rem;
+  background-color: #e6ecf2;
+  float: left;
+  width: 100%;
+}
+
+#home-about-me-img{
+  height: 5rem;
+  width: 5rem;
+  margin-right: 2rem;
+  margin-top: 0px;
+  border-radius: 20%;
+}
+
+.home-about-me-body{
+  width: 100%;
+  margin: 0;
+}
+
+#home-sections-container{
+  float: left;
+  margin-top: 0;
+}
+
+.section-card{
+  background-color: #E6ECF2;
+  font-size: 12px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  border-radius: 3%;
+  box-shadow: 0px 0px 4px 4px rgba(0, 0, 0, 0.1);
+}
+
+.home-p {
+    height: 100%;
+    font-size: 130%;
+}
+
+.section-btn {
+  width: 50%;
+  margin: auto;
+}
+
+.my-list-container {
+  margin: 4rem;
+}
+
+.experiences-row {
+    margin-top: 4rem;
+}
+
+.experience-col{
+    box-shadow: 10px 10px 5px rgba(0, 0, 0, 0.5);
+}
+
+.experience-img {
+    max-height: 12vh;
+    max-width: 12vh;
+    margin-right: 10px;
+}
+
+.contact-jumbotron {
+    width: 60%;
+    margin: 7rem auto;
+    background-color: #fff;
+    padding: 20px;
+    box-shadow: 10px 10px 15px rgba(0, 0, 0, 0.5);
+}
+
+.contact-content {
+  width: auto;
+  height: auto;
+}
+
+.contact-me-img {
+    margin: 10px;
+    border-radius: 5%;
+}
+
+.education-container{
+  min-height: 100%;
+  width: 100%;
+  background-size: cover;
+  background-repeat: no-repeat;
+  margin: 0;
+  position: relative;
+}
+
+.my-education-canvas{
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1
+}
+
+.education-card {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+.footer{
+  height: auto;
+  position: fixed;
+  left: 30%;
+  bottom: 5px;
+  width: 40%;
+  color: white;
+  text-align: center;
+  margin: 10px 0px;
+}
+
+.resume-main-container {
+  margin-top: 4rem;
+  margin-bottom: 2rem;
+  padding: 20px 10px;
+  width: 90%;
+  height: auto;
+  position: absolute;
+  left: 5%;
+}
+
+.my-resume-left-container {
+  margin: 50px;
+  border-radius: 3%;
+}
+
+.resume-main-card {
+  width: 96%;
+  position: absolute;
+  left: 1%;
+  margin-bottom: 20px;
+}
+
+.resume-experience-card {
+  position: relative;
+  margin: 0;
+  padding: 0px;
+  width: 100%;
+  font-size: 14px;
+}
+
+#resume-about-me-img{
+  height: 5rem;
+  width: 5rem;
+  margin-right: 10px;
+  margin-left: 5px;
+  margin-top: 0px;
+  border-radius: 20%;
+}
+
+.certificate-card {
+  box-shadow: 4px 4px 10px rgba(100, 0, 0, 0.5);
+  border-radius: 1%;
+  margin: 20px;
+}
+
+
+#resume-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: linear-gradient(#25364f, #4d71a5, #9bc4ff);
+  background-size: cover;
+  background-repeat: no-repeat;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+#aboutMeMediaResume{
+  background-color:white;
+  padding: 10px 5px 5px 5px;
+  border-radius: 5px;
+}
+
+.content-section {
+  background: #ffffff;
+  padding: 10px 20px;
+  border: 1px solid #dddddd;
+  border-radius: 3px;
+  margin-bottom: 20px;
+  margin-top: 4rem;
+}

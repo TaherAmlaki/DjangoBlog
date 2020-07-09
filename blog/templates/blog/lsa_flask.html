@@ -1,0 +1,367 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Dealing with large volume of text is a tedious and error prone task for humans. Machines are much quicker in
+    performing well defined tasks but cannot understand natural language. Humans communication is a very slow
+    process in general, a few bytes per seconds. To compensate the speed, the language has become more ambiguous and
+    often similar sentences or phrases can have multiple meaning. The challenge of Natural Language Processing (NLP) is to
+    automate extraction of useful measures from this complicated structure.
+</p>
+
+<p>
+    One such task in NLP is summarizing a text written in natural language, finding the most important concepts behind
+    the raw text and present them in a continuous and well structured manner. There are two approaches to achieve this goal,
+    one is to find the most important parts of the text and extract them from the original text. We assume that the text can be
+    represented with fewer sentences while keeping its meaning and general flow intact.
+    Another approach is abstraction of summary from text, generating new text after processing the original text.
+    In this post we will use extractive approach using Latent Semantic Analysis (LSA).
+</p>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Latent Semantic Analysis (LSA)</strong></h4>
+</div>
+
+<p>
+    Latent Semantic Analysis (LSA) is an unsupervised model for finding a representation of text using latent (maybe hidden)
+    concepts in the text. There are some concepts which are more influential than others and we want to find a way to pick the
+    most important topics and discard others. A very important mathematical object for start of the analysis in NLP is term-document matrix (TDM).
+    Document will be sentences and term are unique words in this post and matrix cells are going to be calculated based on the
+    (modified-)frequency of words in sentences. LSA only uses this matrix to extract concepts and summary, therefore out-of-text
+    information about words and concepts will not be used. We will discuss more about LSA limitations at the last section.
+</p>
+<p>
+    TDM is a dense matrix, meaning that most of the cells are zero, because the number of unique words in a text are  usually
+    much higher than unique words in each sentence. Since a concept can be presented by different words, TDM matrix is noisy meaning that
+    word frequencies over sentences can vary a lot. A mathematical concept to reduce noise from a matrix is Singular Value
+    Decomposition (SVD). SVD can be applied to any matrix and also gives a measure of importance for latent concepts in our case.
+    SVD decomposition can be formulated as below:
+</p>
+$$ X = U \Sigma V^T $$
+
+<p>
+    <strong>X</strong> is TDM, rows are words and columns are sentences, <strong>U</strong> is an orthogonal matrix with rows as words and columns as concepts,
+    <strong>&Sigma;</strong> is a diagonal matrix which diagonal values called singular values (&sigma;) represent weight or
+    importance of each concept and they are ordered from highest to lowest, and <strong>V</strong> is also an orthogonal matrix
+    with rows as sentences and columns as concepts. Singular values represent measure of correlations between sentences
+    (<span>&#8730;</span><strong>X<sup>T</sup>X</strong>) and also between words (<span>&#8730;</span><strong>XX<sup>T</sup></strong>).
+    In many Machine Learning algorithms we are approximating explained correlation of the given data by our model, and here &sigma;<sub>i</sub>'s
+    are representation of them. Mathematically if we try to approximate data on a subspace of dimension <em>k</em>,
+    we will pick the first <em>k</em> values of &sigma;<sub>i</sub>'s and set the rest to zero. The lost correlation is approximated by
+    &sigma;<sub>(k+1)</sub>. This process is called dimensionality reduction and for our work it is equivalent of ignoring the less
+    important concepts.
+</p>
+<p>
+    Singular value decomposition and TruncatedSVD (with dimensionality reduction) are implemented in
+    <a href="https://scikit-learn.org/stable/">scikit-learn</a> library for Python. I am going to pre-process the raw text and
+    then use <a href="https://scikit-learn.org/stable/modules/generated/sklearn.utils.extmath.randomized_svd.html">randomized_svd</a>
+    from sklearn.utils.extmath package to find a low rank U, V, and &Sigma; matrices. At the next step
+    we need to assign importance values to each sentence. There are multiple methods of doing so and we will implement two methods.
+</p>
+
+<p>
+ We begin with an initial implementation of a tokenizer which will remove any digit, special characters, extra spaces,
+ and stopwords from sentence, lemmatizes and lower case each token. A sentence will be
+ converted to a list of tokens.
+</p>
+<pre class="prettyprint"><code>import spacy
+import re
+
+class Tokenizer:
+    def __init__(self, nlp=None):
+        self._nlp = spacy.load('en_core_web_md')
+
+    def tokenize_sentence(self, sentence: str):
+        sentence = re.sub("[\\n|\s]*[\d+.]+\s", " ", sentence)
+        doc = self._nlp(sentence)
+        tokens = [token for token in doc if not token.is_stop and token.is_alpha]
+        tokens = [token.lemma_.lower() for token in tokens if 2 < len(token)]
+        return tokens</code></pre>
+<p>
+  To start with LSA implementation we need to create document-term matrix and we will use one of the
+  scikit-learn vectorizers like <a href="https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.CountVectorizer.html"><em>CountVectorizer</em></a>
+  and <a href="https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfVectorizer.html"><em>TfidfVectorizer</em></a>.
+  We will give the user an option to choose one of these vectorizers and also some options for the vectorizer.
+  For CountVectorizer with binary method instead of word frequencies we can do something like this:
+</p>
+<pre class="prettyprint"><code>CountVectorizer(max_features=self._max_vocab, binary=True)</code></pre>
+<p>
+  The decomposition can be done easily by creating DTM and then passing it to <em>randomized_svd</em>
+  method of scikit-learn and retrieve <strong>U</strong>, <strong>V</strong>, and
+  <strong>&Sigma;</strong> matrices.
+</p>
+<pre class="prettyprint"><code>vectorizer = self._get_vectorizer()
+dtm = vectorizer.fit_transform(tokenized_text)
+u, sigma, vT = randomized_svd(dtm.T,
+                              n_components=self._n_components,
+                              n_iter=5,
+                              random_state=None)</code></pre>
+
+<p>
+    <em>n_components</em> must be selected before decomposition and user can select it, since
+    this number will determine the maximum number of sentences in the final summary. We can add to our
+    Api optimization of n_components but for this post I have not implemented such thing, but to evaluate our summary
+    I am going to use <a href="https://spacy.io/api/doc">spacy similarity</a> method. We will calculate
+    similarity between our summary and original code, the higher the better, and will return
+    the measure to the user so maybe user can try with different options to improve the similarity.
+</p>
+<pre class="prettyprint"><code>def calculate_similarity(self, doc1, doc2):
+  doc1 = self._nlp(doc1)
+  doc2 = self._nlp(doc2)
+  similarity = round(doc1.similarity(doc2) * 100.0)
+  return f"{similarity}%"</code></pre>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Sentence Selection</strong></h4>
+</div>
+<p>
+    After decomposing the DTM matrix we need to calculate some sort of score/importance for each sentence in the
+    text, sort the sentences based on them and select the high scores. There are multiple algorithms that we can use,
+    and for this post I have implemented <a href="https://dl.acm.org/doi/abs/10.1145/383952.383955">Gong and Liu's approach</a> (GL in api),
+    and <a href="https://www.researchgate.net/publication/220017752_Using_Latent_Semantic_Analysis_in_Text_Summarization_and_Summary_Evaluation">Steinberger and Jezek's approach</a>
+    (SJ in api), and they can be selected by user with GL approach being the default. these two approaches are easy to implement and
+    give acceptable sentence selection based on the similarity results.
+</p>
+<p>
+    We start with GL method and that is to take V matrix, and for each concept (column) choosing the sentence with highest
+    cell value. An example of such table for this text, "The man walked the dog. The man took the dog to the park. The dog went to the park."
+    (I got this from Ozsoy's paper,
+    <a href="https://dl.acm.org/doi/10.1177/0165551511408848#:~:text=36-,Abstract,Latent%20Semantic%20Analysis%20(LSA).">Text summarization using Latent Semantic Analysis</a>),
+    with word-frequencies for DTM matrix is shown below with selected sentences.
+</p>
+
+<div class="container text-center d-flex justify-content-center">
+  <table style="width:50%; border:1px solid black">
+    <caption style="caption-side: top">V<sup>T</sup>, Concept-Sentence Matrix, GL</caption>
+    <tr>
+      <td></td>
+      <th scope="col">sent 1</th>
+      <th scope="col">sent 2</th>
+      <th scope="col">sent 3</th>
+    </tr>
+    <tr>
+      <th scope="row">concept 1</th>
+      <td>0.5</td>
+      <td style="border:2px solid black">0.71</td>
+      <td>0.5</td>
+    </tr>
+    <tr>
+      <th scope="row">concept 2</th>
+      <td>-0.71</td>
+      <td>0.0</td>
+      <td style="border:2px solid black">0.71</td>
+    </tr>
+  </table>
+</div>
+
+<p>
+    A problem with GL method is that we should select one sentences for each concept and if user selects a large enough
+    n_components (equivalent of summary size for GL) then a less important concepts will be over-represented in the summary.
+    If there is a major concept in the text it might be better to select more sentences from that concept but that is not
+    possible in GL approach. The other approach
+    Another approach, Steinberger and Jezek's approach (SJ), uses both V and &Sigma; matrices. &Sigma; matrix is a diagonal matrix which
+    its diagonal values are square root of <strong>X<sup>T</sup>X</strong> matrix eigenvalues (X is TDM and related to correlation of sentences
+    calculated from words frequencies). These values (approximately) represent weight/importance of concepts. &Sigma;<sup>2</sup>V can add these weights
+    to V matrix. Now for each sentence (row) we will have a vector which is consist of s<sub>i</sub> = &sigma;<sub>j</sub><sup>2</sup>v<sub>ij</sub>.
+    Norm of this vector for each sentence will be the weight of that sentence, and after sorting, we can
+    pick highest norm sentences. The positive thing about this approach is that if a concept
+    has large enough weight (&sigma;<sub>i</sub><sup>2</sup>) it can have more than one sentence in the summary.
+    My implementation of a method for sentence selection is as follows.
+</p>
+<pre class="prettyprint"><code>def _sentence_selection(self, vT, sigma) -> list:
+    if self._method is not None and self._method == "SJ":
+        new_arr = np.matmul(sigma, sigma)
+        new_arr = np.matmul(new_arr, vT)
+        scores = np.sum(np.abs(new_arr) ** 2, axis=0) ** (1.0 / 2)
+        return np.argsort(-scores)[:self._n_components].tolist()
+    else:
+        # the method used here is GL, also used if method is not given by user
+        return list(set(np.argmax(vT, axis=1).tolist()))</code></pre>
+
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Design of the Api</strong></h4>
+</div>
+<p>
+    Now that we have parts of our LSA implementation, we can start with designing our web service api's to use it. We will have a
+    <em>POST</em> request which will receive the request and do some basic checks on it. If request does not meet basic
+    requirements we will return an error in the response with http 400. If the request is OK then we will pass it to summarizer object
+    which has pool and queue. The summarizer will add the new request to the pool and the task will wait until the process is
+    completed. When the process is completed, it will put the response in the queue. When a <em>GET</em> message is received
+    we will read the queue and check if the id in the request, if not it means that the task is not completed and we will return
+    <em>busy</em> as status. If the id is present we will return the response. We will keep the completed tasks in queue in our records
+    and return them when they are requested. For each valid POST request we will assign a unique and random
+    id to be able to track it later when summary GET request is recaived.
+    This is a simple web service and my design is presented below.
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/LSA_FLASK_DESIGN.png' %}" alt="LSA FLASK DESIGN">
+</div>
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Summarizer Class with Python Multiprocessing Pool</strong></h4>
+</div>
+<p>
+    The web service should be able to handle multiple request simultaneously and the new incoming requests should not block
+    already running tasks, and if our resources are already busy, the new tasks should go to a queue and wait until being
+    completed. We can achieve this by using Python's multiprocessing libraries and we can also set a maximum limit over the
+    number of tasks we want to execute simultaneously. We will also have a <em>Queue</em>
+    object which each process will put its result in it and when we receive a <em>GET</em>
+    request with specif id we can send that response. The implementation is simple and mine is
+    presented below.
+</p>
+
+<pre class="prettyprint"><code>from multiprocessing import cpu_count, Pool, Manager
+from LsaSummarizer import LsaSummarizer
+"""
+  LsaSummarizer is initialized by a request, creates DTM, decomposes DTM,
+  selects sentences, and returns the summary in a json response.
+"""
+class SummarizeTexts:
+    def __init__(self):
+        self._max_workers = cpu_count()
+        self._pool = Pool(self._max_workers)
+        self._manager = Manager()
+        self._result_queue = self._manager.Queue()
+
+    def register_new_request(self, request):
+        lsa_summarizer = LsaSummarizer(request)
+        self._pool.apply_async(lsa_summarizer.start, (self._result_queue, ))
+
+    @property
+    def status(self):
+        results = []
+        while not self._result_queue.empty():
+            results.append(self._result_queue.get())
+        return results</code></pre>
+<p>
+  One small and important point is to initialize Summarizer after __name__=="__main__"
+  in Windows because Windows only uses spawn method for creating processes and needs well-defined point of start. 
+</p>
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Creating Flask Rest Api's</strong></h4>
+</div>
+<p>
+    We will create two resources for our POST and GET messages. They will have different endpoints
+    and should be implemented in two different classes. In each class we will do some
+    basic checks on received request and return appropriate http status code is request is invalid.
+    We allow two types of tasks in our <em>/submit</em> POST, text which allows user to
+    request summary of a raw text, or link which will receives <em>url</em>. If we receive
+    url then we will try to get content of the endpoint and extract text from it by finding
+    all paragraph tags in html and convert them into a text. then we will register this request
+    to summarizer and return appropriate message. We will also register this resource with
+    endpoint. My implementation is as follows.
+</p>
+<pre class="prettyprint"><code>class SubmitText(Resource):
+    @classmethod
+    def post(cls, type_: str):
+        posted_data = request.get_json()
+        if posted_data is None:
+            return {"error": "request body is empty."}, 400
+        type_ = type_.lower()
+        if type_ not in ['text', 'link']:
+            return {"error": f"The received type={type_} is invalid."}, 400
+        elif type_ == "text" and posted_data.get("text") is None:
+            return {"error": "For submit type text, text field must be valid."}, 400
+        elif type_ == "link" and posted_data.get("url") is None:
+            return {"error": "For submit type link, url field must be valid."}, 400
+
+        id_ = secrets.token_hex(6)
+        req = posted_data
+        req['id'] = id_
+        if type_ == "link":
+            _, title, text = get_data_from_url(req.get("url"))
+            if text is None:
+                return {"error": "For submit url could not find any text."}, 400
+            req['text'] = text
+            req['title'] = title
+        summerizer.register_new_request(req)
+        ids_results[id_] = {"message": "request is accepted and is being processed",
+                            "id": id_,
+                            "status": "busy"}
+        return ids_results[id_], 200
+
+api.add_resource(SubmitText, '/submit/&lt;string:type_&gt;')</code></pre>
+
+<p>
+    For retrieving summary we implement a GET request. The main reason for separating submitting text and getting
+    summary is unknown time needed for generating the summary. If the text is large this might take a long time so the response to
+    submit will take long time and user might get timeout as well. So I prefer to separate submitting text from getting summary.
+    If generating summary takes long time and user request the summary in between we can respond with busy status. In short, GET resource
+    is simple and my implementation is as follows.
+</p>
+<pre class="prettyprint"><code>class GetSummary(Resource):
+    @classmethod
+    def get(cls, id_: str):
+        if id_ is None or len(id_) == 0 or id_ not in ids_results.keys():
+            return {"message": "id is invalid"}, 404
+        results = summerizer.status
+        for res in results:
+            _id = res.get("id")
+            ids_results[_id] = res
+
+        res = ids_results.get(id_)
+        if res is not None and res.get('status', 'busy') != 'busy':
+            del ids_results[id_]
+        return res, 200
+
+api.add_resource(GetSummary, "/summary/&lt;string:id_&gt;")</code></pre>
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Results and Conclusion</strong></h4>
+</div>
+<p>
+    To test the application you can execute it from your local Python and to hit your endpoints you can use Postman.
+    Create a POST message to submit the text with some options like, VocabSize which is the number of unique words to keep,
+    NumberOfSentencesInSummary, DocTermMatrixCalculation which is the method of creating DTM and can be wf for word-frequencies, binary for
+    word presence in sentence, tf-idf for using TF-IDF modified word-frequencies, SentenceSelectionMethod which can be GL or SJ.
+    Except text or link, all the other options are optional and can be absent from the request. The POST request in Postman looks like this:
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/LSA_FLASK_POST.png' %}" alt="LSA FLASK POST">
+</div>
+
+<p>
+    And the GET response when the text is ready will contain the summary, id of the task, similarity between the original
+    text and summary calculated using spacy library, and if the request contains <em>url</em> then the title of the page will also be
+    returned.
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/LSA_FLASK_GET.png' %}" alt="LSA FLASK GET">
+</div>
+
+<p>
+    This app is a proof-of-concept for creating a restful web service in Flask for a Machine Learning algorithm. There are a lot of room
+    for improvements for both web service and LSA.
+</p>
+<p>
+    Validations on request can be more extensive and from a design perspective they can be in their own class, then we will have
+    uniform error handling and uniform messages. We should also remove the completed tasks when no GET request for them is
+    received for a certain time. Another option would be to save the tasks into a data base and therefore user can access
+    their results anytime or for a longer period of time.
+</p>
+<p>
+    In Machine Learning part, LSA is a simple and primitive algorithm which does not handle polysemy when a word have multiple meanings.
+    It also only depends on the text unlike some other algorithms like deep learning models with word vectors which we can use
+    pre-trained word vectors. These vectors are trained over large corpora of text and carry some weight from external texts into our text.
+    SVD decomposition is also slow and computationally expensive. Also size of the summary should be given as a meta parameter to the
+    algorithm and therefore models which can optimize summary size will have better results and are more convenient for user as well.
+    Also we are using "en_core_web_md" of spacy which has only 20K word vectors, and to improve our similarity calculation we can use
+    "en_core_web_lg" language model, but then should think about loading it since it is large and will slow down the app.
+</p>
+<p>
+    Thank you for your time.
+</p>
+
+{% endblock content %}

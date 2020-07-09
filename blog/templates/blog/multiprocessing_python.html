@@ -1,0 +1,199 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+  Sometimes we needs to complete several tasks sequencially because each task is dependent
+  on previous task(s), but a lot of times we need to perform many tasks which can be done
+  in parallel because they are not dependent on each other, or maybe there are a lot of down
+  time during executing each task because we are waiting for external system to return
+  a response. In these situations the way we write our script can have huge impact on the
+  execution time. Maybe we need to connect to a server to get some data and we have to wait
+  for a data, during this down time we could have been doing other tasks. Also with modern
+  cpu's becoming multicore with huge power, we could leverage the multicore architecture
+  of our cpu for parallel execution.
+</p>
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Process vs Thread</strong></h4>
+</div>
+<p>
+  When going about writing code in Python for parallel execution with multithreading
+  or multiprocessing, there are some points that we need to take into considerations.
+</p>
+<p>
+  Basic difference is that a process has its own memory space and it can spawn threads when
+  needed, but a threads share the same memory from their parent process.
+  This means that there are less overhead memory when creating threads and you can utilize
+  the idle time of cpu when other it is waiting for other task to be completed,
+  but at the same time threads can influence each other by changing values at the
+  same memory location. In Python there is a Global Interpretor Lock (GIL) which
+  prevents threads to access the same memory location at the same time therefore
+  threads cannot execute the same part of code simultaneously. On the other hand
+  because processes do not share memory space, if communication between them is needed,
+  then special objects like queue should be used.
+</p>
+<p>
+  Second point is that threads are lightweight and very usefull if the task includes I/O bound applications.
+  The example could be retreiving data from a web service or mainloop of a UI. In these cases
+  once a thread is waiting the other thread can continue with its own task. However if the
+  tasks are CPU intensice then processes can be useful because they run on their own
+  CPU core and also avoid the GIL.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Processes, basic cases</strong></h4>
+</div>
+<p>
+  Since this is a post about multiprocessing, the rest of post will talk about processes.
+  Let's assume that we want to execute the same function several times and we have decided to
+  go with multiprocessing. In the below script "function_to_execute" is the function
+  we need to repeat (althought it just gets process id and sleep a little). In the main
+  script we create two new process and give and start them and after starting all processes we
+  join them which makes the code to wait for them to finish.
+</p>
+<pre class="prettyprint"><code>import multiprocessing
+import time
+import os
+
+global_list = []
+
+
+def function_to_execute(sleep_time: int):
+    global global_list
+    ppid = os.getppid()
+    pid = os.getpid()
+    global_list.append(pid)
+    print(f"We are in child process with process id {pid}, "
+          f"and parent process id {ppid}, and global_list id {id(global_list)}")
+    time.sleep(sleep_time)
+
+
+if __name__ == "__main__":
+    processes = []
+    for i in range(2):
+        p = multiprocessing.Process(target=function_to_execute, args=(i, ))
+        processes.append(p)
+        p.start()
+
+    for p in processes:
+        p.join()
+
+    print(f"Global list is {global_list} with id {id(global_list)}")
+</code></pre>
+
+<p>
+  The result printed on console is:
+</p>
+<pre><code>We are in child process with process id 1660, and parent process id 13536,
+  and global_list id 53069104
+We are in child process with process id 1184, and parent process id 13536,
+  and global_list id 51692928
+Global list is [] with id 21099264</code></pre>
+<p>
+  Each child process is an independent process with its own process id and memory space.
+  An important point here is the value of global variable after all processes are done.
+  The value of "global_list" is not changed even though at each execution of "function_to_execute"
+  we append pid to it but at the end in the parent process its value is unchanged. Checking its id shows
+  that the global variable inside each process has different id that the parent global variable and these are
+  not pointing to the same memory location.
+</p>
+<p>
+This is due to how a process is desined, when a process starts (by calling start()
+method on it) three things can happen. I am using a Windows OS, and therefore when
+I start a process the "spawn" method will be used which starts a fresh python interpreter process.
+There are two other methods "fork" and "forkserver", which they will create child processes
+identical to parent.
+</p>
+<p>
+When a variable is inherited from parent it remains identical until it needs to change.
+Then the child variable will be copied and no longer be the same as parent. This is why
+the global_list variable is unchanged in parent process even though we are changing it
+in child process.
+</p>
+<p>
+The __name__ == "__main__" is necessary when "spawn" method is used, so for
+Windows OS is has to be used, and also for "forkserver" start method. The condition makes sure that
+entry point to the program is not going to be executed by the child processes again, so if you remove
+it the children will try to execute the entire script when starting and that will give a Runtime error.
+</p>
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Pool, Queue, and Sharing Data with Parent Process</strong></h4>
+</div>
+<p>
+If you want to execute the script many times but not want to create as many processes you can
+use multiprocessing.Pool class. Pool class allowas you to create as many tasks as you need but keeping the
+(worker) processes limited and also takes care of offloading tasks to workers when they are done
+and continue with another task.
+</p>
+<p>
+It is a feature that each process has its own memory space but maybe we need some
+data about some variables value during execution. This is different from sharing data between
+processes which is not advised but possibel by using shared objects (multiprocessing.Value
+and multiprocessing.Array). I want to share data with parent process and not going to interrupt
+process execution, if so then we can use Queue object.
+</p>
+
+<p>
+In the below example I create a pool of 4 workers and I have 5 processes, so at
+every given time there are 4 processes running. Instead of Queue object I am using
+manager.Queue() because it worked well with Pool because the manager.Queue() object
+is picklable and can be passed to the processes. At the end of script when all processes
+are completed we can get data in queue. queue.get() will get the next item in queue
+and removes it from queue ass well so we can iterate through queue by a simple while
+loop.
+</p>
+
+<pre class="prettyprint"><code>from multiprocessing import Pool, Manager
+from itertools import repeat
+import time
+import os
+
+
+def function_to_execute(sleep_time: int, q):
+    pid = os.getpid()
+    q.put(pid)
+    print(f"We are in child process with process id {pid}")
+    time.sleep(sleep_time)
+
+
+if __name__ == "__main__":
+    pids_list = []
+    manager = Manager()
+    queue = manager.Queue()
+    with Pool(processes=4) as pool:
+        pool.starmap(function_to_execute, zip(range(5), repeat(queue)))
+    print("Process ids in queue are: ", end=" ")
+    while not queue.empty():
+        print(queue.get(), end=" ")
+</code></pre>
+<p>Executing this will give this result in console:</p>
+<pre><code>We are in child process with process id 4864
+We are in child process with process id 4864
+We are in child process with process id 15404
+We are in child process with process id 388
+We are in child process with process id 7896
+Process ids in queue are:  4864 4864 15404 388 7896 </code></pre>
+<p>
+  And as you can see the pprocess ids are correctly appended to the queue and can be
+  retrieved. This is most useful when you want to share this data during process executions.
+  For example if this script is running as a separate thread and we have
+  an external system which periodically calls this thread to get execution status.
+</p>
+<p>
+I made a more practical usage of these concept in my
+<a href="{% url 'article-detail' slug='robot-framework-parallel-execution' %}">Parallel execution of test cases in Robot Framework, Python implementation</a>
+post where I create a Flask web app for parallel execution of automated tests.
+</p>
+
+<p>
+I hope that this post helped you to understand more about multiprocessing in Python
+and thank you for your time.
+</p>
+
+
+{% endblock content %}

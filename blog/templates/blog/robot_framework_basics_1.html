@@ -1,0 +1,260 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+<p>I have recently started to learn
+  <a href="https://robotframework.org/" target="_blank">Robot Framework</a> for my job as a
+  test automation engineer. I find it a useful and comprehensive test automation
+  frameworkm also it is written in Python which makes it easier for me to check its
+  implementations and usage beyond surface. In this article I want
+  to show you what I learned about it when I started. I will show you how to
+  install it and we will create out first test. You do not need anything except
+  Python installed on your machine.
+</p>
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Installation</strong></h4>
+</div>
+<p>
+  Robot Framework is an open source automation framework, and its source code
+  can be found at <a href="https://github.com/robotframework/robotframework" target="_blank">robotframework</a>
+  github repository. Installation is very easy, you just activate your Python
+  virtual environemt and use pip commands. I will also include the most commanly used
+  libraries of Robot Frmaework installed, such as RequestsLibrary which is very
+  useful for testing REST api's, and SeleniumLibrary which is used for testing
+  frontend web applications and websites.
+</p>
+
+<pre>pip install robotframework
+pip install robotframework-requests
+pip install robotframework-seleniumlibrary (not neccessary for this post)</pre>
+<p>
+  Just adding a small point, if you are trying to install some python packages and your administator
+  does not trust pypi or other sourcees that pip install connects to in background (this happened to me when
+  I was trying to install anything with pip and was getting CERTIFICATE_VERIFY_FAILED SSL error),
+  then you can pypi, and files.pythonhosted as trusted hosts. Something like this:
+</p>
+<pre><code>pip install robotframework --user
+  --trusted-host pypi.python.org
+  --trusted-host files.pythonhosted.org
+  --trusted-host pypi.org </code></pre>
+<br>
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Robot Framework Project Structure</strong></h4>
+</div>
+<p>
+  Robot Framework files can have two extensions, x.robot and x.resource. All
+  the test cases need to be in .robot files to be taken as test by the framework.
+  This gives an opportunity to divide the files that contain test cases with giving them .robot
+  extension name, and the files that don't conatain tests but other methods (keywords in Robot Framework)
+  which will help to execute tests, and therefore we can put all .robot files (test files)
+  inside a TestSuites (or whatever name you prefer) directory and all the .resource files
+  into subdirectories of a Resources directory, which makes it easy to understand
+  project hierarchy at first glance.
+</p>
+<p>
+  Let's see what a robot file can contain, at the top it will have *** Settings *** which is the section of importing
+  the libraries needed for the test (or keywords). The next section can be
+  *** Variables ***, in this section you can define your variables. Variables
+  defined here will have global scope and can be used in another files as well.
+  So be careful to use unique names, you can also ignore Variables section if you don't need them.
+  Next section can be *** Keywords *** and it is very important. These are basically
+  helper methods/functions that your test can use. By using Keywords with clear names
+  you can have a more clean and readable tests. The last section can be *** Test Cases ***
+  which will contain your tests and you can execute them directly. Below I have a very
+  simple test.
+</p>
+<div class="container text-center mb-4">
+  <img src="{% static 'blog/images/RobotFrameworkBasics1_1.png' %}" alt="Code Snippet Missing">
+</div>
+<p>
+  I have added all the sections that I mentioned for the sake of illustration, otherwise
+  it is better to move keywords into a separate file with .resource extension.
+  You can add documentation to your tests and keywords by adding "[Documentation]"
+  followed by an string about the test/keyword.
+</p>
+<p>
+  The test name is "Get Palnet 3" which is consists of a GET call to
+  <a href="https://swapi.dev/" target="_blank">swapi.dev</a>, a website that you can practice
+  REST messages and also get star wars movies data. The library RequestsLibrary which is
+  imported at the Settings, has the keyword "Get Request" used at line 19.
+  "Check Status Code" is a keyword that is going to check the GET message's
+  reponse status code and if it is not Http 200, it will fail and causes the test
+  fail as well. When the test fail at some step, its execution will be stopped therefore
+  if you need to continue or ignore failing at some step you need to use "Run Keyword And Continue On Failure" from
+  Robot Framework
+  <a href="https://robotframework.org/robotframework/latest/libraries/BuiltIn.html#Run%20Keyword%20And%20Continue%20On%20Failure" target="_blank">BuiltIn</a> library.
+  There are more options as well so you can get status of the keyword execution and decide what to do based on that status.
+</p>
+<p>
+  To define a variable (line 6) or pass arguments to a keyword
+  (lines 12, 18, 19, 20, 21) Robot Framework uses two spaces. One useful tip
+  would be to use an IDE that can parse .robot and .resource files. I am
+  using PyChram Community with IntelliBot plugin. There are other options such as
+  <a href="https://blog.codecentric.de/en/2012/01/robot-framework-ide-ride-overview/" target="_blank">RIDE</a> (Robot Framework IDE)
+  and Eclipse with plugin RED. The IDE+plugin will warn you about spaces
+  and other syntax errors.
+</p>
+<p>
+  The variable types in Robot Framework are based on Python types. The most useful
+  variable types are scalar, list, and dictionary, and variables are case-insensitive.
+</p>
+<pre>${I_am_string} =  my string  (scalar variable can be numbers, list, etc.)
+@{I_am_list} =    item1  item2
+&{I_am_dictionary} =  key1=value1  key2=value2</pre>
+<p>
+  To learn more about them checkout Robot Framework
+  <a href="https://robotframework.org/robotframework/latest/libraries/BuiltIn.html" target="_blank">BuiltIn</a>
+  library, the most important library for using Robot Framework which contains
+  every thing about strings and generic keywords. An important note about variables is
+  their scope, although the variables defined only inside.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Executing the Tests</strong></h4>
+</div>
+<p>
+  If you are using
+  <a href="https://marketplace.eclipse.org/content/red-robot-editor" target="_blank">RED</a> plugin in eclipse then you can select a test case, right click
+  and execute it. I am using Pycharm and faced some issues with executing directly from IDE. For this
+  reason I looked into <a href="https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#all-command-line-options" target="_blank">command line options</a> in
+  Robot Framework and I find some of them frequently used. The most frequent option for me is -t (--test) which indicates
+  which test should be run from the suite.
+</p>
+<pre><code>python -m robot -t test_name path_to_suite_file</code></pre>
+<p>
+  and if yoy need more tests you can add -t second_test_name after the first one and so on.
+</p>
+<p>
+  Another userful feature is "[Tags]"
+  which can also be used for tests and keywords. You can have multiple tags, and they help to
+  organize test execution. For example you can have regression tag for one test
+  and smoke tag for another test, and both regression and smoke for another test. You can pass
+  the tag as command line option (passing -i tag_name), or run options if you want to execute tests
+  from Python script (passing include=list_of_tags). Executing command from terminal will be somethinf like below:
+</p>
+<pre>python -m robot -i smoke Tests/GetStarwarsFilms.robot</pre>
+<p>
+
+
+<p>
+  There are many more options for executing the test and post processing the results
+  and reports.
+</p>
+<p>
+  If you like to use a python script to execute Robot Framework
+  automated tests and control results then you can use
+  <a href="https://robot-framework.readthedocs.io/en/v3.2.1/_modules/robot/run.html" target="_blank">robot.run</a> module of Robot Framework.
+  A first try to implement a simple test execution helper for me is like below:
+</p>
+<pre class="prettyprint"><code>from robot import run
+from datetime import datetime
+
+
+class ExecuteRobotTests:
+    def execute(self, suites: list, tests: list = None, options: dict = None):
+        if options is None:
+            options = {}
+        if tests is not None:
+            options['test'] = tests
+        return run(*suites, **options)
+
+
+if __name__ == "__main__":
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_name = f"log__{now}.html"
+    my_options = {'outputdir': "./Reports", "log": log_name}
+
+    executor = ExecuteRobotTests()
+    executor.execute(suites=["path_to_first_suite", "path_to_second_suite"],
+                     tests=['first_test', 'second_test'],
+                     options=my_options)</code></pre>
+<p>
+
+</p>
+I used a class even though the execute method is static, because in future we can
+add some properties to class which could be usefull to have access to them. So basically
+robot.run(*suites, **options) is the main method which I am creating a wrapper around. It will take path to suites (.robot files with tests)
+and options as python keeywords. I prefer to have a list of suites path and a list of test cases which I want to
+exsecute a dn other options as dictionary, like log name and output directory. This simple implementation will run the tests in
+the tests list from the suites in the suites list (so if the suites do not contain the tests nothing will be executed),
+and will create report files inside Reports directory at the same level as the code, and html log which have time stamp in its name
+so it will not be overwritten by next time execution.
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Creating Custom Listener</strong></h4>
+</div>
+<p>
+
+</p>
+If you like to create a custom report for test executions, or you want to find out about tests
+structure or executions status (all will be used in my other Posts), then you want to create
+your own listener first. I am going to show you how to create a simple listener and how to add it to your test
+execution logic.
+<p>
+  By default Robot Framework create multile log files; output.xml, report.html, and log.html.
+  Log.html is very useful for debugging your test execution and contains all steps that has been used during
+  execution. By default these files will be created at the execution directory, where you are executing tests.
+  You can change both names, and locations of these files via command line options or script options (as in previous section).
+  To check all the available options you can check
+  <a href="https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#all-command-line-options" target="_blank">
+    Robot Framework User Guide
+  </a>
+  . The tests I created are available at my Github
+  repository <a href="https://github.com/TaherAmlaki/RobotFlask/tree/master/Tests" target="_blank">RobotFlask</a>.
+  .
+</p>
+<p>
+The listener which I present here will save the executed keywords names for each test as a dictionary and append
+it to a list for all tests, so at the end we will have information about which steps the test used. In another
+<a href="{% url 'article-detail' slug='robot-framework-test-overview' %}">post</a>, I will expand this listener to
+get tests information and create a user friendly view of suites hierarchy.
+</p>
+<pre class="prettyprint"><code>class RobotOverviewListener:
+    ROBOT_LISTENER_API_VERSION = 2
+    SUITE_NAME = "SuiteName"
+    SUITE_TESTS = "Tests"
+    TEST_NAME = "TestName"
+    TEST_STEPS = "TestSteps"
+
+    def __init__(self):
+        self.suites = []
+        self._current_suite = {}
+        self._current_test = {}
+
+    def start_suite(self, name, attributes):
+        self._current_suite[self.SUITE_NAME] = name
+        self._current_suite[self.SUITE_TESTS] = []
+
+    def start_test(self, name, attributes):
+        self._current_test[self.TEST_NAME] = name
+        self._current_test[self.TEST_STEPS] = []
+
+    def start_keyword(self, name, attributes):
+        self._current_test[self.TEST_STEPS].append(attributes.get("kwname", name))
+
+    def end_test(self, name, attributes):
+        self._current_suite[self.SUITE_TESTS].append(self._current_test.copy())
+
+    def end_suite(self, name, attributes):
+        self.suites.append(self._current_suite.copy())</code></pre>
+<p>
+To learn about other available methods in Robot Framework listener you can check their
+<a href="https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#listener-interface" target="_blank">Listener Interface</a>
+documentation and add/remove/edit the methods according to your need. To add the listener to your
+execution logic, you can simply add it to options.
+</p>
+<pre>options['listener'] = RobotOverviewListener()</pre>
+<p>
+I hope that this post was useful for you. I know that many automation engineers prefer
+to start with other parts of the framework, but to me those parts about variable types and builtIn keywords, etc. are
+easy to learn and are more about syntax that logic. I am planning to write more articles which will expand on the concepts
+discussed in this post.
+</p>
+<p>Thank you for your time.</p>
+<br>
+
+
+{% endblock content %}

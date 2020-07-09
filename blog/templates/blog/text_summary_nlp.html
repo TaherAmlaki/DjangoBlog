@@ -1,0 +1,299 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+<p>
+  With constantly increasing number of articles, posts, and other text data on the internet
+  it is crucial to have some mechanisms to sort the data, create summaries for us so we
+  can acceess the main idea of a text data quickly and efficiently.
+  There are many sophisticated methods and algorithms to generate a summary of a text using
+  some Natural Language Processing model, but starting with it can be simple as we will see in this
+  post.
+</p>
+<p>
+  I am going to use some simple text pre-processing libraries to clean the text from
+  Wikipedia, and calculate frequencies/scores for each unique word in the text. Then we
+  will evaluate each sentence and sort the result to obtain an ordered list of sentences. After that we can just
+  pick the number of sentences that we want to show in our summary.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Getting The Text From Wikipedia</strong></h4>
+</div>
+<p>
+  We will be using Wikipedia as the source of our text. We can obtain the text easily by
+  using <em>requests</em> and <em>Beautiful Soup</em> libraries in Python to GET the html content
+  of the query and parse the result to obtain all the paragraphs. IF the query contains a title
+  that does not exists in Wikipedia then the code should return an error message and
+  I am using <em>status_code</em>, which usually is http 404. There is also a bit more
+  general function that can get the paragraphs for a given url.
+</p>
+<pre class="prettyprint"><code>import bs4
+import requests
+
+
+def get_data_from_title(wiki_page_title: str):
+    url = f"https://en.wikipedia.org/wiki/{wiki_page_title.title()}"
+    return get_data_from_full_url(url)
+
+
+def get_data_from_full_url(url: str):
+    response = requests.get(url)
+    status_code = response.status_code if response is not None else 500
+    if response is not None and response.status_code < 400:
+        html = bs4.BeautifulSoup(response.text, 'html.parser')
+        page_title = html.find(id="firstHeading").text
+        paragraphs = [p.text.strip() for p in html.find_all("p")
+                      if p.text != "\n"]
+        return status_code, page_title, paragraphs
+    return status_code, "NotFound", []
+</code></pre>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Pre-Processing The Text</strong></h4>
+</div>
+<p>
+  A paragraph or sentence can contain words, letter, numbers, punctuations, and many other type of characters.
+  Preprocessing the text is one of the important steps in doing any NLP task. There are multiple reasons for this effect.
+  One reason could be that some words occur in many sentences, like <em>"The"</em> in English language, that they have little effect on the meaning
+  or importance of sentence (importance of sentence is needed for creating a summary), these words are called stop-words.
+  It is commin step to remove stopwords from text before converting text to a mathematical object, like a vector or matrix.
+  Removing them will decrease the dimension of the corresponding vector which will make the calculations more efficient, but also because these
+  stopwords appear in so many sentences, keeping them will make different sentences seem more similar to each other and our NLP algorithms will not be able
+  to pick up their differences as easy as when they are removed.
+</p>
+<p>
+  We can clean the text more by removing digits, because they also usually do not change
+  sentence a lot. Punctuations can have significance if our goal was to perform sentiment analysis, but for
+  creating summary they are not important and we will also remove them. Extra white space is also not helpful and we will remove them as well.
+</p>
+<p>
+  The tense of the verbs are also not important factor in determining their importance, so we will perform
+  lemmatization on the verbs. The way the verbs with different tense or ending will become the same verb and therefore
+  we will be able to compare the sentences containing them. At the end we will also lowercase each word because capitalization is also
+  not a factor.
+</p>
+<p>
+  To do all the above I am going to use <a href="https://docs.python.org/3/library/re.html"><em>Regular Expressions (re)</em></a> and
+  <a href="https://spacy.io/"><em>spaCy</em></a> libraries in Python. Re library is used to find patterns in the strings
+  and we will use it to remove digits, non-alphanumeric letters, new lines and extra white spaces from
+  the sentences. Spacy is a free and open-source library for NLP and we will use it here to
+  get sentences from paragraphs (a sentence does not always end with "."), remove
+  stopwords and lemmatize the words.
+  Another option for these tasks could have been
+  <a href="https://www.nltk.org/"><em>NLTK</em></a> library, but spacy is faster for
+  lemmatization.
+  My implementation is as follows:
+</p>
+<pre class="prettyprint"><code>import spacy
+import re
+
+class Tokenizer:
+    def __init__(self):
+        self._nlp = spacy.load('en_core_web_sm', disable=['ner'])
+
+    def tokenize_paragraphs(self, paragraphs: list):
+        sentences = []
+        for paragraph in paragraphs:
+            sentences += self.tokenize_paragraph(paragraph)
+        return sentences
+
+    def tokenize_paragraph(self, paragraph: str):
+        return [{"sentence": sent.text,
+                 "sentence_tokenized": self.tokenize_sentence(sent.text)}
+                for sent in self._nlp(paragraph).sents]
+
+    def tokenize_sentence(self, sentence: str):
+        sentence = re.sub("[\\n|\s]*[\d+.]+\s", " ", sentence)
+        doc = self._nlp(sentence)
+        tokens = [token for token in doc if not token.is_stop and token.is_alpha]
+        tokens = [token.lemma_.lower() for token in tokens]
+        return tokens</code></pre>
+<p>
+  I am creating a class because I want to initialize and load spacy once in the
+  <em>__init__</em> method and keep using it. Most of the work is done in <em>tokenize_sentence</em>
+  method which first removes all new lines, extra spaces, and digits from sentence, then
+  load the sentence using spacy object initiated at <em>__init__</em>, and then creates a
+  list of tokens which are not stopwords and are alphanumerical only, and then lemmatize each token and lower them.
+</p>
+<p>
+  The <em>tokenize_paragraph</em> will split a paragraph into its sentences using spacy object over paragraph
+  and for each senetence calls <em>tokenize_sentence</em> and expand the list of senetences with the token while also keeping the
+  original sentence in a dictionary. The <em>tokenize_paragraphs</em> is the high-level method which received list of
+  paragraphs and uses <em>tokenize_paragraph</em> on each element. This is the method which we will use
+  to tokenize entire text in one call.
+</p>
+
+
+<!--  ==================================================    -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Calculating Word Frequencies And Sentence Score</strong></h4>
+</div>
+<p>
+  Now it is the time to bring the above classes together. I am going to make the app as a console
+  application so we can pass the title of wikipedia page and number of sentences in summary to it and therefore making it
+  more flexible. We will assume the first parameter passed to program is the title.
+  We can obtain the arguments passed to the program by sys.argv list. The first element of this
+  list will be the name of the execution script, the second should be the title, and the third item if present will be
+  the maximum number of senetences in the summary.
+</p>
+<pre class="prettyprint"><code>import sys
+from concurrent.futures import ThreadPoolExecutor
+from RetrieveDataFromWiki import get_data_from_title
+from SentenceTokenizer import Tokenizer
+from WordFrequency import generate_word_frequency_map_from_sentences
+from DocumentTermMatrix import get_dtm_for_sentences
+import numpy as np
+
+
+if __name__ == "__main__":
+    title = sys.argv[1]
+    try:
+        number_of_sentences = int(sys.argv[2])
+    except (IndexError, ValueError):
+        number_of_sentences = 3
+
+    with ThreadPoolExecutor() as executor:
+        future = executor.submit(get_data_from_title, title)
+        tokenizer = Tokenizer()
+        paragraphs = future.result()[-1]
+    sentences = tokenizer.tokenize_paragraphs(paragraphs)
+    word_frequencies = generate_word_frequency_map_from_sentences(sentences)
+    for sent_ind in range(len(sentences)):
+        sent_dict = sentences[sent_ind]
+        score = sum([word_frequencies.get(token, 0)
+                    for token in sent_dict.get("sentence_tokenized", [])])
+        sent_dict.update({"score": score})
+
+    res = [s['sentence'] for s in
+           sorted(sentences, key=lambda item: -item['score'])]
+    res = ' '.join(res[:number_of_sentences])
+    print("=======================================================")
+    print(res)
+    print("=======================================================")</code></pre>
+<p>
+  We will initialize tokenizer because initializing spacy language object can be slow
+  due to loading of spacy English core data. Next we can get the data from wikipedia and
+  depending on the connection and size of the wikipedia article this can also take some time.
+  We can create a seperate thread to load the data to speed up the execution since during loading data
+  from wikipedia we are waiting for data to be received. I am using
+  <em>concurrent.futures.ThreadPoolExecutor</em> with context manager because I am expecting the paragraphs
+  to be returned from method.
+</p>
+
+<p>
+  After parsing html to paragraphs and initializing the tokenizer, we will pass all
+  the paragraphs to tokenizer instance to get preprocessed tokenized sentences. I am
+  calculating word frequencies in the same script but it is probably a better design if
+  I had seperated that into its own class or function. However, for this implementation it is not
+  problematic. Finding word frequencies is just going through each tokenized sentence and for each token
+  adding the counts for it. At the end we can just add the sum of all the counts to the sentence
+  dictionary as <em>score</em>. We can also normalize the score before performing sum to the highest
+  frequency but I do not see the point of doing so.
+</p>
+
+<p>
+  Now, we can simply sort the list of sentences dictionary based on the values of <em>score</em>
+  and pick the top sentences for the summary. Below is the result summary for wikipedia
+  article on <strong>Mathematics</strong> with only 2 sentence summary.
+</p>
+
+<blockquote class="shadow-sm">
+  <p>
+    Mathematical logic includes the mathematical study of logic and the applications of
+    formal logic to other areas of mathematics; set theory is the branch of mathematics
+    that studies sets or collections of objects. The term applied mathematics
+    also describes the professional specialty in which mathematicians work on practical problems;
+    as a profession focused on practical problems, applied mathematics focuses on the
+    "formulation, study, and use of mathematical models" in science, engineering,
+    and other areas of mathematical practice.
+  </p>
+</blockquote>
+
+
+<!--  ==================================================    -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Weaknesses And Possible Improvement</strong></h4>
+</div>
+<p>
+  Now that we have finished the simple model of extracting text summary, we can take a closer
+  look into the shortcomings of the model and maybe even improve it a little. One issue is that we sum
+  over all tokens frequency for each sentence and therefore longer sentences get higher
+  score just for being longer. A short sentence should really contain many high frequency
+  words to have a chance of being represented. We can add a hard threshold on the
+  sentence size to avoid picking too long sentences, but then we might miss important long sentences
+  just because they are long. For a better solution we can use word frequency in each sentence and therefore
+  we will get frequencies which do not depend on the sentence size.
+</p>
+<p>
+  Another weakness is that words with highest frequency can be insignificant words by the same
+  logic as stopwords were. These high frequency words act like stopwords for this specific topic and the sentences which have them
+  are harder to distinguish based on score. This will make our algorithm unstable if there are many of these kind of
+  high frequency words in the article. A poissible solution is to use <em>Inverse Document Frequency (idf)</em>.
+  Idf for a given word in the article is defined as natural logarithm of number of sentences in the article divided over
+  number of sentences which contain that word. This value decreases as the word appear in
+  more sentences and therefore losses its significance. However this decrease is not linear and so
+  the word will not lose its weight completely if we use tf-idf (tf for term frequency).
+</p>
+<p>
+  Fortunately <a href="https://scikit-learn.org/stable/"><strong>scikit-learn</strong></a> library in Python
+  has these type of vectorization already implemented as <em>sklearn.feature_extraction.text.TfidfVectorizer</em>.
+</p>
+<pre class="prettyprint"><code>from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+
+def get_dtm_for_sentences(sentences: list):
+    vectorizer = TfidfVectorizer(max_features=2000)
+    sentences = vectorizer.fit_transform(sentences)
+    return sentences, vectorizer</code></pre>
+<p>
+  This method will fit and transform list of sentences into Document-Term matrix (dtm), with rows
+  are sentences and columns are terms/words/tokens. After this transformation for each
+  sentences we can sum the corresponding row and calculate a new score. This small part can be added
+  to the main code:
+</p>
+<pre class="prettyprint"><code>string_sents = [' '.join(sent['sentence_tokenized']) for sent in sentences]
+dtm, vectorizer = get_dtm_for_sentences(string_sents)
+scores = dtm.sum(axis=1)
+scores = np.squeeze(np.asarray(scores))
+scores = np.argsort(-scores)[:number_of_sentences]
+res = [sentences[i]['sentence'] for i in scores]
+print(' '.join(res))</code></pre>
+
+<p>
+  Before passing the sentences to the tf-idf vectorizer I joing the list of tokens together
+  to create a string. This is how the sklearn vectorizer input should look like. Also the sklearn vectorizer
+  has many options to pass tokenizer, or remove stopwords, etc. but because I have already created
+  the tokenized sentences I did not pass any of those arguments. Now we can compare the result for simple
+  word-frequency in article algorithm with tf-idf model, for wikipedia article on Python.
+</p>
+
+<blockquote>
+  <p>With Word-frequencies over article:</p>
+  <p>Examples of the use of this prefix in names of Python applications or libraries include Pygame,
+    a binding of SDL to Python (commonly used to create games); PyQt and PyGTK, which bind Qt and GTK to
+    Python respectively; and PyPy, a Python implementation originally written in Python.
+    There are several compilers to high-level object languages, with either unrestricted Python,
+    a restricted subset of Python, or a language similar to Python as the source language:
+  </p>
+  <p>=====================================================================</p>
+  <p>With TF-IDF and DTM:</p>
+  <p>
+    Python has been successfully embedded in many software products as a scripting language,
+    including in finite element method software such as Abaqus, 3D parametric modeler like
+    FreeCAD, 3D animation packages such as 3ds Max, Blender, Cinema 4D, Lightwave, Houdini, Maya,
+    modo, MotionBuilder, Softimage, the visual effects compositor Nuke, 2D imaging programs like GIMP,[157]
+    Python is commonly used in artificial intelligence projects and machine learning projects with the help
+    of libraries like TensorFlow, Keras, Pytorch and Scikit-learn.[163][164][165][166] As a scripting language
+    with modular architecture, simple syntax and rich text processing tools, Python is often used for
+    natural language processing.[167]
+  </p>
+</blockquote>
+<p>
+  I think the second result with using TF-IDF and DTM is better and more informative. Ofcourse, this is not
+  the best model and in many situations the simpler model can work better because it weights common words more. There
+  are more advanced model which use Latent Semantic Analysis (LSA) to find semenatically significant sentences. I hope to be able to write a post
+  about LSA in future.
+</p>
+
+{% endblock content %}

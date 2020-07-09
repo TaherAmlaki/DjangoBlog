@@ -1,0 +1,342 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+  We might have written many tests with a lot of steps in your Robot Framework
+  test automation project. What if we need to report how many tests we have,
+  we can count them in the tests directory. What about the names, it can be useful to
+  have their names also be ready because that shows what each test is doing (if
+  the names are selected wisely). What about steps and do we also want the overview
+  to look nice?
+</p>
+<p>
+  I want to create an automated overview generator for Robot Framework tests, with user interface.
+  This way I can checkout the tests quickly and also report them.
+</p>
+<p>
+  I will use two methods
+  for getting the data from test files, and user interfaces with
+  <a href="https://docs.python.org/3/library/tk.html" target="_blank">TkInter</a> the Python's
+  standard GUI package. TkInter is a basic GUI package for creating desktop applications
+  with Python. In another <a href="{% url 'article-detail' slug='robot-framework-flask-test-server-1' %}">post</a>
+  I will be using <a href="https://flask.palletsprojects.com/en/1.1.x/" target="_blank">Flask</a>,
+  a light-weight web application framework in Python, to move toward creating a test server.
+</p>
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Getting Tests Data</strong></h4>
+</div>
+<p>
+  The first way to get data of test cases is to use
+  <a href="https://robot-framework.readthedocs.io/en/3.0/autodoc/robot.parsing.html" target="_blank">robot.parsing</a>
+  package. To find the suite data of a specific .robot file we can use the TestData instance for our suite file.
+</p>
+<pre class="prettyprint"><code>from robot.parsing.model import TestData
+suite_data = TestData(parent=None, source=path_to_robot_file)
+suite_name = suite_data.name
+suite_path = os.path.abspath(suite_data.source)
+suite_variables = [{"VarName": v.name, "VarValue": v.value} for v in
+                    suite_data.variable_table.variables]</code></pre>
+
+<p>
+  suite_name is simply the file name for .robot files and suite_data.source is the relative path of the
+  suite. If you have defined any variables in Variables section then you can get
+  their name and value from suite_data.variable_table.variables. You can also retrieve meta data
+  and suite documentation in a similar way.
+</p>
+
+<p>
+  And to get data of all the tests inside that .robot file we can iterate throught
+  testcase_table:
+</p>
+<pre class="prettyprint"><code>tests = []
+text_index = 0
+for test_case in tests_data.testcase_table:
+  steps = getattr(tests_data.testcase_table.tests[text_index], "steps")
+  steps = [{'step': step.name, "args": step.args} for step in steps
+            if getattr(step, "name", None)]
+  tests.append({TEST_NAME: test_case.name,
+                TEST_TAGS: test_case.tags.as_list()[1:],
+                TEST_DOCUMENTS: str(test_case.doc),
+                TEST_STEPS: steps})
+  text_index += 1</code></pre>
+
+
+<p>
+  By combining the two code snippets for suite data and tests data, we can create
+  a script to retrieve suites and tests infromation and we can use this data for overview of automated test cases.
+  The Python scipt that I have created for this purpose is at my Github repository,
+  <a href="https://github.com/TaherAmlaki/RobotFlask/blob/master/TestWebApp/MyRobotRunners/GetTests.py" target="_blank">
+    GetTests.py
+  </a>.
+</p>
+
+<p>
+  One small tip that I used personally to find
+  the structure and properties if TestData object was printing x.__dict__ for the objects
+  that I did not know what they include. In Python when an object (instance of a class)
+  is created, Python will add instant properties to the instance dictionary
+  (not if class uses slots but that is not happening here) and those properties
+  can be checked by calling the instance dictionary. For example for TestData instance
+  the available keys are as follows:
+</p>
+<pre class="prettyprint"><code>
+TestData().__dict__.keys()=dict_keys(['directory', 'setting_table', 'variable_table', 'testcase_table', 'keyword_table', 'parent', 'source', 'children', '_tables'])
+</code>
+</pre>
+
+<p>
+  The implementation of robot.parsing.model has changed for Robot frmaework version 3.2.1 and the script in the
+  Github cannot be used for it. I want to check the documentation for the new version and
+  update this article. Howevere, there is another way of retrieveing the test data that works for all version.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Dryrun, the second way of getting tests tata</strong></h4>
+</div>
+<p>
+  The second way to get suites and tests data is to perform a dryrun, and save
+  the data during execution by using a custom listener. A dryrun usually is executed
+  to make sure that there is no syntax error. Robot Framework will parse the test cases
+  and keywords, but it will not execute keywords. Therefore, it is safe to use dryrun
+  to check your tests syntaxes and gather data about the tests execution dependencies.
+</p>
+
+<p>
+  To set this up we need to execute tests from a Python script and create a custom listener for tests execution.
+  First let's write a simple listener to gather the information we need. To learn about Robot Framework listener interface
+  you can check the documentation of
+  <a href="https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#listener-interface" target="_blank">
+    Listener interface methods
+  </a> of robot Framework. We are implementing this listener with version 2 because
+  start_keyword has not yet been implemented for version 3 and for creating the overview
+  we need to know which keywords are executed during each test's execution.
+</p>
+
+<pre class="prettyprint lang-pyhton"><code>class RobotOverviewListener:
+    ROBOT_LISTENER_API_VERSION = 2
+    SUITE_NAME = "SuiteName"
+    SUITE_TESTS = "Tests"
+    TEST_NAME = "TestName"
+    TEST_STEPS = "TestSteps"
+
+    def __init__(self):
+        self.suites = []
+        self._current_suite = {}
+        self._current_test = {}
+
+    def start_suite(self, name, attributes):
+        self._current_suite[self.SUITE_NAME] = name
+        self._current_suite[self.SUITE_TESTS] = []
+
+    def start_test(self, name, attributes):
+        self._current_test[self.TEST_NAME] = name
+        self._current_test[self.TEST_STEPS] = []
+
+    def start_keyword(self, name, attrs):
+        self._current_test[self.TEST_STEPS].append(attrs.get("kwname", name))
+
+    def end_test(self, name, attributes):
+        self._current_suite[self.SUITE_TESTS].append(self._current_test.copy())
+        self._current_test = {}
+
+    def end_suite(self, name, attributes):
+        self.suites.append(self._current_suite.copy())
+        self._current_suite = {}
+
+</code></pre>
+
+<p>
+  To start the dryrun with the custom listener, we can simply pass the path of all suites as a list and adding listener in options to robot.run method.
+  Below suites is the list of suites path, and I have added log, output, and report options as None to not generate
+  any report file that Robot Framework by default generates. I also added an instance of custom listener to options.
+</p>
+<pre class="prettyprint"><code>from robot import run
+listener = RobotOverviewListener()
+options = {"dryrun": "yes",
+           "listener": listener,
+           "log": None, "output": None, "report": None}
+run(*suites, **options)
+suites_info = listener.suites</code></pre>
+
+<p>
+The result is a list of dictionaries representing data for each suite, I converted
+an example into json and one item of that json array is like below:
+</p>
+<pre><code>print(json.dumps(suites_info[0], indent=2))
+
+{
+  "SuiteName": "GetStarWarsPlanets",
+  "Tests": [
+    {
+      "TestName": "Get Planet 3",
+      "TestSteps": [
+        "Set Variable",
+        "Create Session",
+        "Get Request",
+        "Check Status Code",
+        "Should Be Equal As Strings",
+        "Sleep",
+        "Log To Console"
+      ]
+    }
+  ]
+}</code></pre>
+<p>
+We can also add arguments passed to tests and keywords by adding attributes.get("args", [])
+to start_test and start_keyword methods and saving the resulting list for that particular keyword.
+</p>
+<br>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Creating GUI with TkInter</strong></h4>
+</div>
+<p>
+  Tkinter is the GUI toolkit that comes with Python, therefore no installation is required.
+  Tkinter is a good starting point to learn how to create user interfaces with Python,
+  and the interface can be used across Windows, Linux, and Mac OS. There are several other
+  GUI toolkits that can be used to create user interfaces in Python, like PyQT, wxPython, and Kivy.
+  They all are cross-platform and with Kivy you can also create mobile applications as well.
+  However, still Tkinter is easier to start with, and learning it helps with understanding
+  fundamentals of creating GUI's. I will create the tests overview with tkinter for this post,
+  it does not look very modern but it works as a proof od concept.
+</p>
+
+<p>
+  My Goal for these Robot Framework series is to create a Test Server, where you can
+  overview the suites, tests, keywords, and execute them remotely. to reach this goal I will
+  use Flask to create an app that runs on browser. However, if you prefer a desktop application,
+  learning Tkinter, or one of the above mentioned frameworks/toolkits will be the next step.
+  the scripts are available at my
+  <a href="https://github.com/TaherAmlaki/RobotFlask/tree/master/TestWebApp" target="_blank">Github repository</a>. In this repository I also
+  have the script for Flask implementation of this application, to execute tkinter application you can
+  simply run <a href="https://github.com/TaherAmlaki/RobotFlask/blob/master/TestWebApp/TestsOverviewTk.py" target="_blank">TestsOverviewTk.py</a>.
+</p>
+
+<p>
+  The tool will have two pages, first page is goning to show the suites and by selecting one of them you can see
+  the tests inside that suite. If you still want more information about the test, you can select it and then
+  the second page will open and shows test steps with the arguments they take. This application can be expanded
+  to include selection of tests and their execution, howevere I am not going to expamd it to include those functionality
+  with TkInter, but with Flask, checkout that post
+  <a href="{% url 'article-detail' slug='robot-framework-flask-test-server-1' %}">here</a>.
+</p>
+
+<div class="row justify-content-md-center">
+  <div class="col-sm-10">
+    <div class="container text-center mb-4">
+      <img class="img-fluid" src="{% static 'blog/images/robot_tkinter_seq_diagram.png' %}" alt="Sequence Diagram">
+    </div>
+  </div>
+</div>
+<p>
+The high level sequence diagram for this app is show above. First we need to fetch the
+suites and tests data by looking into every .robot file inside a directory. The path to it should
+be given inside a configuration.json file. When the data is ready, our script will start
+a tkinter app and passed the data to it. From here, the tkinter app will manage presentation of
+data to user. The snippet is as below:
+</p>
+<pre class="prettyprint"><code>if __name__ == "__main__":
+    try:
+        suite_data = GetSuiteInfo.retrieve_all_tests()
+        app = MainWindow(suite_data)  # the tkinter app
+        app.protocol("WM_DELETE_WINDOW", app.on_closing)
+        app.mainloop()   # tkinter app starts its main loop here
+    except Exception as ex:
+        res = messagebox.showinfo("Critical Error",
+                                  f"A critical exception occurred. "
+                                  f"{str(ex)}")</code></pre>
+
+<p>
+I have made a chioce here by putting data retrieval before start of gui. I made app coming to foreground
+delayed until the data is ready. I could also made a thread to retrieve data, start tkinter app,
+and when the gui was in foreground show a message to the user that we are getting the data, and when the data
+was ready we could immediately show it to user. I think that is more inline with modern
+application design but it is also more complicated (but not too much) and for this post unnecessary.
+</p>
+
+<p>
+  MainWindow is the class which we will create to manage and create all
+  of the pages. We will set up some details about our app like title, window size,
+  background color, icon, and Windows minimum size first and then we will
+  create a map of all the pages available. MainWindow will inherit from TkInter.Tk
+  class, which will be our root window and initializing it will initialize tcl/tk
+  interpretor to actually execute tkinter commands. An important method of MainWindow
+  is <em>show_page</em> which is going to create the requested page if not created already,
+  and raise the page to foreground. We will pass instance of MainWindw, the root window of out app,
+  to each page and each page can request another page to come to foreground using show_page.
+  My implementation of MainWindow without styling is as follows:
+</p>
+
+<pre class="prettyprint"><code>class MainWindow(tk.Tk):
+    def __init__(self, suites_data):
+        super().__init__()
+        self.suites_data = suites_data
+
+        self._container = ttk.Frame(self)
+        self._container.pack(side="top", fill="both", expand=True)
+        self._container.grid_rowconfigure(0, weight=1)
+        self._container.grid_columnconfigure(0, weight=1)
+
+        self.frames = {}
+        self._page_dict = {PAGE.ROBOT_HOME_PAGE: RobotMainFrame,
+                           PAGE.ROBOT_TEST_PAGE: RobotTestFrame}
+        self.show_page(PAGE.ROBOT_HOME_PAGE, suites_data=self.suites_data)
+
+    def show_page(self, page: PAGE, **kwargs):
+        if self.frames.get(page) is None:
+            p = self._page_dict.get(page)(parent=self._container,
+                                          controller=self,
+                                          **kwargs)
+            self.frames[page] = p
+            p.grid(row=0, column=0, sticky='nsew')
+        frame = self.frames.get(page)
+        frame.tkraise()
+
+    def on_closing(self):
+        if messagebox.askokcancel("CLOSE", "Do you want to close?"):
+            self.destroy()</code></pre>
+
+<p>
+  As you can see, the _page_dict property is a dictionary which has page name
+  (defined as Enum in another class) and corresponding class that can create
+  the page. All the codes for this application (with styling) are in my
+  <a href="https://github.com/TaherAmlaki/RobotFlask/tree/master/TestWebApp" target="_blank">Github</a>.
+  The next step is simply using tkinter to create pages, each page is basically a
+  tkinter frame with some buttons and labels. Each page should accept parent and controller as arguments.
+</p>
+<pre class="prettyprint"><code>class RobotMainFrame(ttk.Frame):
+    def __init__(self, parent, controller, **kwargs):
+        super().__init__(parent)
+        self._controller = controller
+        self._suites_data = kwargs.get("suites_data", [])</code></pre>
+<p>
+  The implementation is relatively easy but also depeneds on how you prefer to present
+  the data. My implementation of the pages are at the same repository under
+  <a href="https://github.com/TaherAmlaki/RobotFlask/tree/master/TestWebApp/TkinterGui/Pages" target="_blank">Pages</a>
+  directory. The result for for the tests I have created before is something like this:
+</p>
+<div class="row justify-content-md-center">
+  <div class="col-md-6 col-sm-12">
+    <div class="container text-center mb-4">
+      <img class="img-fluid" src="{% static 'blog/images/robot_tkinter_1.png' %}" alt="Suites View Image" style="height:300px">
+    </div>
+  </div>
+  <div class="col-md-6 col-sm-12">
+    <div class="cantainer text-center md-4">
+      <img class="img-fluid" src="{% static 'blog/images/robot_tkinter_2.png' %}" alt="Test View Image" style="height:300px">
+    </div>
+  </div>
+</div>
+
+<p>
+I hope that this post helped triggering an idea of creating wrappers and UI's for
+your test automation framework. Thank you for your time.
+</p>
+
+{% endblock content %}

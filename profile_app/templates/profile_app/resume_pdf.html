@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+{% load static %}
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <style type="text/css">
+    @page {
+      size: A4;
+      margin: 1cm;
+    }
+
+    body {
+      font-weight: 150;
+      line-height: normal;
+    }
+
+    h1, h2 {
+      padding: 0px;
+    }
+
+    .HrLine {
+      border: none;
+      height: 1px;
+      background-color: red;
+      color: red;
+    }
+  </style>
+  <title>Taher Amlaki - Resume</title>
+</head>
+
+<body>
+  <div style="text-align:center; padding-bottom:0px">
+    <h1>Taher Amlaki</h1>
+    <h3><em>Python Developer</em></h3>
+    <p class="mt-0 text-justify" style="font-size:13px;">{{ about_me.short_version }}</p>
+    <hr class="HrLine" />
+  </div>
+
+  <div style="text-align:center">
+    <h5><strong>Technical Skills</strong></h5>
+  </div>
+  {% for skill in skills %}
+  <div class="row" style="padding:10px">
+    <h6><strong>{{ skill.title }} @{{ skill.area }}</strong></h6>
+    <ul class="text-left unstyled">
+      {% for experience in skill.experiences %}
+      <li>{{ experience }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+
+  <div class="card justify-content-center">
+    <div class="card-img-overlay d-flex flex-column resume-main-card">
+      <div class="row text-center justify-content-center" style="margin-top:4rem; margin-bottom:20px;">
+
+        <div class="col-md-6 col-sm-12 bg-ligh">
+          <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
+            <div class="card">
+              <div class="card-header">
+                <h4><strong>Experiences</strong></h4>
+              </div>
+              <div class="card-body">
+                <div class="row text-center justify-content-center">
+                  {% for experience in experiences %}
+                  <div class="media">
+                    <img class="align-self-start ml-1" src="{{ experience.company_icon.url }}" style="width:75px;height:75px;">
+                    <div class="media-body">
+                      <h6 class="article-title m-0">
+                        <strong>
+                          {{ experience.title }}
+                        </strong>
+                        <a class="mr-1" href="{{ experience.link_to_company }}">@{{ experience.company }}</a>
+                        {% if experience.end_date == None %}
+                        <small class="text-muted">{{ experience.start_date|date:"N Y" }} - Presence</small>
+                        {% else %}
+                        <small class="text-muted">{{ experience.start_date|date:"N Y" }} - {{ experience.end_date|date:"N Y" }}</small>
+                        {% endif %}
+                      </h6>
+                      <div class="card mb-1 rounded" style="border:none">
+                        <div class="card-body">
+                          <div class="entry-content">
+                            <ul>
+                              {% for task in experience.tasks %}
+                              <li class="card-text text-justify" style="font-size:14px">{{ task }}</li>
+                              {% endfor %}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
+            <div class="card" style="width:100%">
+              <div class="card-header">
+                <h5><strong><a href="{% url 'educations' %}">Education</a></strong></h5>
+              </div>
+              <div class="card-body">
+                {% for education in educations %}
+                <div class="row text-center justify-content-center" style="padding:12px">
+                  <div class="col-md-12 float-left">
+                    <strong>{{ education.title }}</strong>
+                    <a class="mr-1" href="{{ education.university_link }}">@{{ education.university }}</a>
+                  </div>
+                  <p>{{ education.thesis_title }}</p>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

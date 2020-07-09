@@ -1,0 +1,172 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+  Creating an User Interface for our application can increase our applications usuabality
+  a lot. If you are using Python for programming the backend you can use some frameworks or
+  packages to create GUI's which are compatible with Python as well. There are several options
+  in Python.
+</p>
+<ul>
+  <li>
+    <strong>TkInter</strong>: This is the basic GUI framework which is bundled with Python so no
+    installation is required. Starting with TkInter is very easy due to its simplisity
+    and there are many resources about in on the web. However, it does not look very modern.
+  </li>
+  <li>
+    <strong>PyQT</strong>: This is one of the more used cross-paltform Python binding
+    implementing the QT library for QT framework. It has both commercial and GPL licence and you can
+    use it for free if your application is open source.
+  </li>
+  <li>
+    <strong>WxPython</strong>: An open-source wrapper for for WxWidgets GUI library for both
+    C++ and python. You can create native applications for Windows, Mac OS and Unix with WxPython.
+  </li>
+  <li>
+    <strong>Kivy</strong>: It is an open-source Python GUI library. It is cross-platform
+    and also includes Android , iOS, and Raspberry Pi. Kivy supports multi-touch actions which are
+    usefull for mobile applications and it has modern looking widgets in its toolkit.
+  </li>
+</ul>
+<p>
+  There are many more GUI frameworks or toolkits for Python and you can find a list
+  of them in <a href="https://wiki.python.org/moin/GuiProgramming" target="_blank">Python Wiki</a>.
+</p>
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Final Result and Game Design</strong></h4>
+</div>
+<p>
+  Installing Kivy is very easy and you can find installation guide for all supported platforms in their
+  <a href="https://kivy.org/#download" target="_blank">documentation</a>.
+  It is recommended to create a virtual environment for your app/game and activate it to install kivy on it.
+</p>
+<p>
+  The game will have two pages, introduction which we can put some explanation about the game and controls, and
+  the second page which is the play page. We have Sun and Earth displayed on the page, player can control
+  Sun's movement by arrow keys on keyboard and Earth's velocity by adjusting two sliders for speed in each direction.
+  If Earth comes too close to Sun then it will be shooted out of the screen and the game is over. The idea is to keep earth
+  in the screen as long as possible and also create pretty footprints while doing so. An screenshot of both pages are shown below.
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/earth_orbit_game_kivy.png' %}" alt="Earth Orbit Game">
+</div>
+
+<p>
+  The design of the app contains one base class for entities, the objects that exists in the game,
+  screens/pages which are Kivy Widgets with methods to register keyboard events and interact with entities.
+  We also have background Widget, a picture of Milky way galaxy for both screens. The high-level design is shown below:
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/EarthOrbitKivy.png' %}" alt="Earth Orbit Game">
+</div>
+
+<p>
+  Kivy supports kv language which is designed for creating user interface elements of Kivy framework
+  and also can contain the intercation of elements. However, it is not necessary to
+  use kv language and we can keep all the implementation inside Python code and that is what I
+  prefer.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Entities, Sun and Earth</strong></h4>
+</div>
+<p>
+  It is a good design approach to decouple objects of the game from their corresponding
+  UI widgets. We define a base Entity class which will be inherited by all the entities inside the
+  game (Sun and Earth for this game). An object of game has coordinate, velocity, and size.
+  Moreover, in this case an object can be influenced by gravity forces and its movement will leave a track.
+  I added force variable to the Entity class and also a list of points that the object goes through so if we want
+  we can save the points and draw the path of the object. In the picture of the game Earth's path is
+  going to be blue and Sun's path is yellow. I have decided to represent each entity
+  in the game as an instance of Kivy's Ellipse class because all planets and stars in the
+  game are going to be spherical.
+</p>
+<p>
+  The Entity base class should also have a move method that accepts any argument
+  and keyword argument. The entities that are allowed to move will implement this
+  method and when frontend calls these methods for an entity the object's coordinates,
+  velocities, path, and forces should be recalculated.
+</p>
+<p>
+  Sun is controlled by player and its distance from Earth affects Earth movement, but Sun itself is not being affected
+  by Earth's movement because in reality Sun's mass is 300,000 times bigger than Earth and Earth's gravity has very small
+  effect of Sun's velocity. For this reason, <em>force</em> attribute is not used for Sun's
+  <em>move</em> method.
+</p>
+<p>
+  On the Other hand, Earth is always influenced by Sun's gravitational field and its movement
+  depends on its momentum and distance from Sun. The coordinate, velocity, and force for
+  Earth object should be updated in every frame and special considerations be taken into account,
+  because if Earth collide with Sun, its velocity will be infinite and our program will overflow. To
+  prevent this I have two conditions to keep both velocity in x and y directions bounded to some
+  high but not infinite number.
+</p>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Screens and Background</strong></h4>
+</div>
+<p>
+  We have two pages and to navigate between them we use Kivy's <em>ScreenManager</em>,
+  and we create an instance of it for our app. We create an instance for each page/screen
+  and add them one by one to the screen manager instance. This screen manager instance
+  is available for each screen and to change pages we can simply set current attribute
+  of screen manager. For example when start button is clicked in the introduction page the
+  below method is executed:
+</p>
+<pre class="prettyprint"><code>def _on_start_clicked(self, instance):
+  self.manager.current = PageNames.GAME_PAGE.value</code></pre>
+
+<p>
+  The main methods of the app are <em>__init__</em> method where we instansiate
+  the screen manager, introduction pagce, and game page, and add them to the screen manager.
+  The <em>build</em> method is inherited from Kivy's App class and will return the screen manager.
+  In the same script we start the app inside a try-catch clause, here in the catch block we
+  can log the error and raise the exception again or our own exception.
+</p>
+<pre class="prettyprint"><code>class EarthOrbitApp(App):
+    title = "Earth Orbit Game"
+
+    def __init__(self, **kwargs):
+        self.icon = ForceAppPath.FORCE_ICON.value
+        super().__init__(**kwargs)
+        self.sm = ScreenManager(transition=SlideTransition(duration=1))
+        self._intro_page = IntroductionScreen(name=PageNames.INTRO.value)
+        self._game_page = GameScreen(name=PageNames.GAME_PAGE.value)
+        self.sm.add_widget(self._intro_page)
+        self.sm.add_widget(self._game_page)
+        self._popup_exit = None
+
+    def build(self):
+        Window.clearcolor = (0.25, 0.25, 0.25, 1)
+        Window.bind(on_request_close=self.on_request_close)
+        return self.sm
+
+if __name__ == "__main__":
+  app = EarthOrbitApp()
+  try:
+    app.run()
+  except Exception as ex:
+    raise ex
+</code></pre>
+
+<p>
+  The screens/pages inherit from Kivy's Screen and we we add the entities, their path, sliders, and
+  background image to them. The full code is available in my Github repository
+  <a href="https://github.com/TaherAmlaki/KivyEarthOrbit/tree/master/EarthOrbitGame">EarthOrbitGame</a>.
+</p>
+
+<p>
+  Thank you for you time.
+</p>
+
+
+
+
+{% endblock content %}

@@ -1,0 +1,22 @@
+{% extends "profile_app/base_home.html" %}
+{% block content %}
+{% include 'profile_app/navbar.html' %}
+    <div class="row text-center justify-content-center experiences-row">
+    {% for certificate in certificates %}
+        <div class="col-md-4 col-sm-8 d-flex bg-white certificate-card">
+            <div class="media p-3">
+                <img class="ml-0 experience-img" src="{{ certificate.ca_icon.url }}">
+                <div class="media-body">
+                    <p class="mr-2">
+                        {{ certificate.certificate_authority }}
+                         - <small class="text-muted">
+                            {{ certificate.end_date|date:"F Y" }} - {{ certificate.duration }} hours course
+                            </small>
+                    </p>
+                    <h5><a href="{{ certificate.certificate_link }}">{{ certificate.title }}</a></h5>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+    </div>
+{% endblock content %}

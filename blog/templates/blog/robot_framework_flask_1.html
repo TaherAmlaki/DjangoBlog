@@ -1,0 +1,210 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+<p>During my working as test automation enginner, I always faced the question
+  of how to communicate the test scope, coverage, and results to the rest of the
+  team. This usually is as informal as sitting with development and business analysts
+  in a meeting room and explining about what I am doing, or maybe a formal test
+  report and saving test execution logs in a shared file system.
+</p>
+<p>
+  There are also methods of scripting the tests, like using Gherkin syntax,
+  which tries to put a structure around business requirement language and
+  transform them unchanged to test steps. Using the same language as much as possible
+  will simplify high level description of tests. You can show it to the others
+  and they will understand the test. I think this is basically just translate
+  into using intuitive naming for tests and tests steps. Gherkin's syntax can
+  also be used in Robot Framework but it is not neccessary.
+</p>
+<p>
+  I have been thinking about this challenge, and have this in my mine,
+  let's use intuitive naming for everything (which is obvious) and seperate
+  test scripting from test execution and monitoring. For my latest job I
+  am using <a href="https://robotframework.org/" target="_blank">Robot Framework</a>
+  to script the test cases. It is an open source framework created using
+  Python language to be used for test automation. I have created
+  <a href="{% url 'article-detail' slug='robot-framework-introduction' %}">Starting With Robot Frmaework</a> post,
+  and another one about creating tests overview tool with tkinter,
+  <a href="{% url 'article-detail' slug='robot-framework-test-overview' %}">Creating a Test Overview Application For Robot Framework</a> post.
+</p>
+
+<p>
+  I am going to illustrate
+  how to create a web app for automated tests created in Robot Framework and
+  <a href="https://flask.palletsprojects.com/en/1.1.x/" target="_blank">Flask</a> for web
+  development by Python. This illustration is going to be simple and not
+  production ready, but the tests can be viewd on browser, executed and monitored.
+  The code is available at my github repo <a href="https://github.com/TaherAmlaki/RobotFlask.git" target="_blank">RobotFlask</a>.
+</p>
+
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>High-level Design</strong></h4>
+</div>
+<p>
+I am going to present my plan, we need a backend which can get suite and tests data from
+robot files, I have created such python scripts in previous post
+<a href="{% url 'article-detail' slug='robot-framework-test-overview' %}">Creating a Test Overview Application For Robot Framework</a>.
+We also need a python script that can execute the tests and keep track of execution status because we want to
+report the status to frontend. In frontend, we should create a simple Flask applications,
+with routes for home/start page and execution/result page, and we need two more internal routes
+which will be called from jQuery Ajax from home and result pages to get execution starting and getting
+its status. At the end we can also save Robot Framework html log file to local file
+system and direct user to the link or show the result in frontend. Below is the flowchart with steps
+which I think are needed for happy flow. I hope it is helpful, I am not very good with
+visual presentations.
+</p>
+<div class="row justify-content-md-center">
+  <div class="col-sm-12">
+    <div class="container text-center mb-4">
+      <img class="img-fluid" src="{% static 'blog/images/robot_flask_flowchart.png' %}" alt="Flowchart">
+    </div>
+  </div>
+</div>
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Frontend Implementation</strong></h4>
+</div>
+<p>
+We start by creating Flask app and home page where we will retrieve test data and
+present it to the user by rendering home template. In the home.html file we pass
+suites list of dictionaries and number of tests for each suite and Flask uses Jinja2
+template engine and these variables can be used inside the html. We also need to
+create a JavaScript file for home.html because we will start execution of tests from home route
+by sending a POST message to an internal route /_execute_start and redirecting to /result route after
+receiving success response.
+</p>
+<pre class="prettyprint"><code>app = Flask(__name__)
+suites = None
+
+@app.route("/")
+@app.route("/home")
+def home():
+    global suites
+    suites = GetSuiteInfo.retrieve_all_tests()
+    suite_test_numbers = sum([suite["SuiteTestNumbers"] for suite in suites])
+    return render_template('home.html',
+                            suites=suites,
+                            test_numbers=suite_test_numbers)</code></pre>
+<p>
+The html files are saved in a directory named "templates" (as required by Flask)
+and javascripts and css files in "static" directory. The important section of JavaScript
+for home page is where we send the POST message (we need jQuery to be imported in the html file):
+</p>
+<pre><code>$.ajax({
+  url: $SCRIPT_ROOT + "/_execution_start",
+  type: 'POST',
+  contentType: 'application/json;charset=UTF-8',
+  data: JSON.stringify(testsDict),
+  success: function(response) {
+    if (response.redirect) {
+      window.location.href = $SCRIPT_ROOT + response.redirect;
+    }
+  }
+});</code></pre>
+<p>
+  And in the response we need to define a redirect to /result route. But before redirecting
+  I am going to start a new Thread for executing the selected suites and/or test cases and
+  the Thread and execution object instance are defined as global variables so we can access
+  them in /result and other routes.
+</p>
+<pre class="prettyprint"><code>@app.route("/_execution_start", methods=["POST"])
+def _execution_start():
+    global tests_to_execute, execution_manager, execution_thread
+    tests_to_execute = {"Tests": request.json['tests'],
+                        "log": request.json['log']}
+    execution_manager = ExecutionManager(tests=tests_to_execute, suites=suites)
+    execution_thread = Thread(target=execution_manager.start)
+    execution_thread.start()
+    return jsonify(status="OK",
+                   tests=execution_manager.prepared_tests,
+                   redirect="/result")</code></pre>
+<p>
+When execution has started and we are redirected to /result route, we are going to
+show all tests in a list with progress bar indicating progress of execution. The period
+GET message is going to be sent, wait for response, update the progress bar for all tests,
+then when all tests are executed we will stop and show a link for html log with an alert.
+</p>
+<pre class="prettyprint"><code>@app.route("/result")
+def result():
+    global execution_manager
+    return render_template("result.html",
+                            tests=execution_manager.prepared_tests)
+
+@app.route("/_execution_status", methods=["GET"])
+def _execution_status():
+    global execution_manager, execution_thread
+    if execution_thread.isAlive():
+        return jsonify(tests=execution_manager.status, execution="running")
+    else:
+        execution_thread.join()
+        return jsonify(tests=execution_manager.status,
+                       execution="done",
+                       logs=execution_manager.logs)</code></pre>
+
+
+
+
+<div class="article-section-title">
+ <h4 class="text-center"><strong>Backend Implementation, ExecutionManager</strong></h4>
+</div>
+<p>
+The complete implementation of
+<a href="https://github.com/TaherAmlaki/RobotFlask/blob/master/TestWebApp/MyRobotRunners/ExecuteTestArray.py" target="_blank">ExecutionManager</a>
+is in my Github repository. Becasue the implemenation is long, I am going to only
+present the more basic concepts I used. The two important methods are start method
+which will create a listener, a log if it was selected by user, and execute it
+in one go. status is the instance property which will collect data from all listeneres
+(here we only use one but in future we can have more) and check the keywords that were already
+executed. In the data gathering phase we collected all the steps that a test case
+will go through and now we can check how many of them are executed. A Naive indicator
+of preogress would be the percentage of the steps that have passed.
+</p>
+<pre class="prettyprint"><code>    def start(self):
+        self._listeners.append(RobotListenerExecution())
+        options = {"listener": self._listeners[0], 'log': None}
+        if self._tests.get("log"):
+            now = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.logs.append(f"log_{now}.html")
+            options['log'] = self.logs[0]
+        execution = ExecuteRobotTests()
+        execution.execute(self._robot_suites, self._robot_tests, options)
+
+    @property
+    def status(self):
+        percentages = {}
+        for listener in self._listeners:
+            for test_suite_name, keywords_status in listener.tests.items():
+                keywords = [k.lower() for k in keywords_status['keywords']]
+                test_full_keywords = self.test2steps[test_suite_name]
+                p = len([s for s in test_full_keywords if s in keywords])
+                p = 100.0 * p / len(test_full_keywords)
+                res = [round(p), keywords_status['status']]
+                percentages[self._test2ids[test_suite_name]] = res
+        return percentages</code></pre>
+
+<p>
+The full implementation is in <a href="https://github.com/TaherAmlaki/RobotFlask" target="_blank">RobotFlask</a> Github repository.
+In future I will add more features to the code and the most recent code might be a little bit
+different from what presented here. I hope that this post has helped to start a curiosity
+about test automation and what we can do to expand out toolbox.
+</p>
+<p>
+The picture of the two pages on browser are as follows.
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/robot_flask_home.png' %}" alt="Robot Flask Home">
+</div>
+<hr>
+<div class="col-sm-12">
+  <div class="cantainer text-center md-4">
+    <img class="img-fluid" src="{% static 'blog/images/robot_flask_result.png' %}" alt="Robot Flask Result">
+  </div>
+</div>
+
+
+{% endblock content %}

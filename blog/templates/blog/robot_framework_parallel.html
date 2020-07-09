@@ -1,0 +1,186 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+In my previous post
+<a href="{% url 'article-detail' slug='robot-framework-flask-test-server-1' %}">
+Test Server for Robot Framework automated tests with Flask in Python
+</a>
+, I have created a Flask web application to execute automated test cases and update
+the execution status during execution. In this post I want to expand the app with
+adding parallel execution to it so the execution time can resuce drastically.
+</p>
+
+<p>
+  At first I tried to use multithreading for parallel execution because a lot of automated tests are
+  going to get data from external systems (like using REST calls or reading/writing files).
+  Threads are ideal for I/O bound tasks like these and naturally the first choice for parallel
+  tests execution.
+</p>
+<p>
+  I faced some issues that changed my initial design. Multithreading uses threads only and threads
+  share the same memory space. In Robot Framework there are global, suite and test case
+  variables. Also test cases use a lot of same keywords and we have to manage different threads
+  accessing to the same keywords. It can be done using Locks and they have to be implemeneted in the script,
+  however as long as a thread is using that keyword the other threads cannot use it and this will cost time.
+  On the other hand, each process has its own memory space and they do not share data so
+  accessing to the same keywords and variables will be avoided but still the same script
+  will be executed in parallel. There is however some overhead when creating processes
+  but I think the benefit of the gained speed along the execution would make it useful.
+</p>
+
+<p>
+  High-level flow and components design of app is shown in the below image.
+</p>
+
+<div class="row justify-content-md-center">
+  <div class="col-sm-12">
+    <div class="container text-center mb-4">
+      <img class="img-fluid" src="{% static 'blog/images/flask_robot_parallel.png' %}" alt="Flowchart">
+    </div>
+  </div>
+</div>
+
+
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Execution Script</strong></h4>
+</div>
+
+<p>
+  I am going to use Python's Multiprocessing package to create processes as described
+  by the <a href="https://docs.python.org/2/library/multiprocessing.html" target="_blank">documentation</a>.
+  To keep the number of processes at any given time I am going to use Pool object with
+  limited number of workers. The numbers of workers will be the minium of number of
+  tests and number of CPU cores available. And to get the test cases status
+  during execution from multiple processes I am using a Queue object.
+  Each process will execute a <em>ExecuteRobotTests</em> instance
+  with a custom listener which saves every test case and keyword name when being used and
+  put the list to the queue. The results can be pulled from the queue when frontend
+  sends a GET request and sent back.
+</p>
+
+<p>
+  The listener needs to have the queue object as one of its attributes and implement Robot Framework
+  listener version 2 so we can also get methods for keywords. The data in the listener will be saved as a list of
+  dictionaries which each dictionary contains the test name and list of keywords which has been
+  started. An example of the change I am talking about for start_test method is as follows:
+</p>
+<pre class="prettyprint"><code>self.tests[(self._current_suite, self._current_test)] =
+  {"keywords": [], "status": "running"}
+self.queue.put(self.tests)</code></pre>
+<p>
+  Similar changes should be applied to the other methods of the listener for <em>start_suite</em>,
+  <em>start_keyword</em>, <em>log_message</em> and <em>end_test</em>, so we can
+  get a full picture of test execution.
+</p>
+<p>
+  I am also separating each test case from others and execute each in its own process.
+  Here, we can improve our app by allowing user to decide on parallel execution options. Maybe user preferes
+  to execute a suite (a .robot file) in one sig=ngle process or maybe the tests in that suite are
+  actually dependent on each other (in that case user also needs to be able to define the execution order for test cases).
+  My current solution does not allow these options yet but you can improve this part when you decide
+  to expand it.
+</p>
+
+<p>
+  The execution method should be started in Flask route <em>/_execution_start</em>
+  as a new thread and the method will spawn the processes inside the Pool object.
+  Below is the main piece of this method, also user can opt to not have any execution
+  report log, but if the log option is selected then a unique log name will be generated to each test.
+</p>
+<pre class="prettyprint"><code>
+MAX_NUMBER_OF_WORKERS = cpu_count() - 1
+manager = Manager()
+self._queue = manager.Queue()
+test_data = []
+max_workers = min(ExecutionManager.MAX_NUMBER_OF_WORKERS,
+                  len(self._parallel_tests))
+for test in self._parallel_tests:
+    listener = RobotListenerExecution()
+    options = {"listener": listener, 'log': None}
+    if self._tests.get("log"):
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.logs.append(f"log__{test['logName']}__{now}.html")
+        options['log'] = self.logs[-1]
+    test_data.append([test['SuitePath'], test['TestName'], options, self._queue])
+pool = Pool(max_workers)
+pool.map(ExecuteRobotTests().execute, test_data)
+pool.close()
+pool.join()
+              </code></pre>
+
+<p>
+  The reason that we run the above method as a thread is that we want to redirect
+  user to a new page and during the execution frontend will periodically send a GET message to retrieve
+  status property. Status will take all the new data from queue and save them into _status and we will return
+  it as the response of the GET request. For each updated value in queue we will calculate the percentage
+  of steps done to the total steps a test case have (defined as p in the script).
+</p>
+<pre class="prettyprint"><code>@property
+def status(self):
+    if self._queue is None:
+        return self._status
+
+    while not self._queue.empty():
+        data = self._queue.get()
+        if data:
+            for test_suite_name, val in data.items():
+                keywords = [k.lower() for k in val['keywords']]
+                status = val['status']
+                test_full_keywords = self.test2steps[test_suite_name]
+                p = len([s for s in test_full_keywords if s in keywords])
+                p = round(100.0 * p / len(test_full_keywords))
+                self._status[self._test2ids[test_suite_name]] = [p, status]
+    return self._status</code></pre>
+
+
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Frontend Changes</strong></h4>
+</div>
+<p>
+  Frontend Web app is not going to change drastically and we only need to change a few small components.
+  In the tests view (Home) page we are going to add an option (two checkboxes) for
+  selecting consecutive or parallel execution and will pass this selection in the POST
+  message request to the backend. Below is the function that handles sending the
+  POST request and its response in JavaScript:
+</p>
+<pre class="prettyprint"><code>function handleExecuteButton() {
+  let logCheckbox = document.getElementById("logHtml");
+  let executionCheckbox = document.getElementById("executeParallel");
+
+  var testsDict = {
+    'tests': testsToExecuteData,
+    'log': logCheckbox.checked,
+    'parallel': executionCheckbox.checked
+  };
+  $.ajax({
+    url: $SCRIPT_ROOT + "/_execution_start",
+    type: 'POST',
+    contentType: 'application/json;charset=UTF-8',
+    data: JSON.stringify(testsDict),
+    success: function(response) {
+      if (response.redirect) {
+        window.location.href = $SCRIPT_ROOT + response.redirect;
+      }
+    }
+  });
+}</code></pre>
+
+<p>
+  Another change is having serveral log files because now Robot Framework will
+  generate a new log file for each test. In the bootstrap alert we create an
+  unordered list group and add new list elements to it by JavaScript code
+  with log files names and urls to them (the logs are saved in the local file system)
+  when test execution is completed for all tests.
+</p>
+
+<p>
+  My implementation of this project is in my Github repository
+  <a href="https://github.com/TaherAmlaki/RobotFlask" target="_blank">RobotFlask</a> alongside of
+  a test viewer Tkinter implementation.
+</p>
+
+{% endblock content %}

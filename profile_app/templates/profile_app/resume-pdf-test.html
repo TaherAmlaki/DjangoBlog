@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+{% load static %}
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" href="{% static 'profile_app/main.css' %}">
+  <title>Taher's Blog</title>
+  <link rel="icon" href="{% static 'profile_app/my_blog_icon.png' %}" type="image/x-icon">
+</head>
+
+<body>
+  <div class="card justify-content-center">
+    <div class="card-img-overlay d-flex flex-column resume-main-card">
+      <div class="row text-center justify-content-center" style="margin-top:10px; margin-bottom:10px;">
+        <div class="col-md-4 col-sm-4 col-xs-12">
+          <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
+            <div class="media" id="aboutMeMediaResume">
+              <img class="rounded-circle align-self-start mt-1" id="resume-about-me-img" src="{% static 'profile_app/my_pic.jpg' %}" alt="My Picture">
+              <div class="media-body" style="margin-right:10px;margine-left:0">
+                <h5>Taher Amlaki</h5>
+                <p><em>Python Developer</em></p>
+                <p class="mt-0 text-justify" style="font-size:13px;">
+                  I am interested in programming and analytical challenges. I think that the best way
+                  to learn something is by building an application with it. I have
+                  created a few Python applications, test automation tool with Java, and
+                  my own blog with Django, bootstrap, and Python. 
+                </p>
+              </div>
+            </div>
+          </div>
+          <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
+            <div class="card" style="width:100%">
+              <div class="card-header">
+                <h5><strong>Technical Skills</strong></h5>
+              </div>
+              <div class="card-body">
+                {% for skill in skills %}
+                <div class="row" style="padding:5px">
+                  <h6><strong>{{ skill.title }} @{{ skill.area }}</strong></h6>
+                  <ul class="text-left unstyled">
+                    {% for experience in skill.experiences %}
+                    <li>{{ experience }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-8 col-sm-12 bg-ligh">
+          <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
+            <div class="card">
+              <div class="card-header">
+                <h4><strong>Experiences</strong></h4>
+              </div>
+              <div class="card-body">
+                <div class="row text-center justify-content-center">
+                  {% for experience in experiences %}
+                  <div class="media">
+                    <img class="align-self-start ml-1" src="{{ experience.company_icon.url }}" style="width:75px;height:75px;">
+                    <div class="media-body">
+                      <h6 class="article-title m-0">
+                        <strong>
+                          {{ experience.title }}
+                        </strong>
+                        <a class="mr-1" href="{{ experience.link_to_company }}">@{{ experience.company }}</a>
+                        {% if experience.end_date == None %}
+                        <small class="text-muted">{{ experience.start_date|date:"N Y" }} - Presence</small>
+                        {% else %}
+                        <small class="text-muted">{{ experience.start_date|date:"N Y" }} - {{ experience.end_date|date:"N Y" }}</small>
+                        {% endif %}
+                      </h6>
+                      <div class="card mb-1 rounded" style="border:none">
+                        <div class="card-body">
+                          <div class="entry-content">
+                            <ul>
+                              {% for task in experience.tasks %}
+                              <li class="card-text text-justify" style="font-size:14px">{{ task }}</li>
+                              {% endfor %}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row text-center justify-content-start align-items-start" style="padding:0px 5px 5px 5px;">
+            <div class="col-md-8" style="padding:0px 5px 5px 0px;">
+              <div class="card" style="width:100%">
+                <div class="card-header">
+                  <h5><strong>Education</strong></h5>
+                </div>
+                <div class="card-body">
+                  {% for education in educations %}
+                  <div class="row text-center justify-content-center" style="padding:6px">
+                    <div class="col-md-12 float-left">
+                      <strong>{{ education.title }}</strong>
+                      <a class="mr-1" href="{{ education.university_link }}">@{{ education.university }}</a>
+                    </div>
+                    <p>{{ education.thesis_title }}</p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4" style="padding:0px 0px 5px 5px;">
+              <div class="card" style="width:100%">
+                <div class="card-header">
+                  <h5><strong>Links</strong></h5>
+                </div>
+                <div class="card-body">
+                  <div class="row text-center justify-content-center" style="padding:6px">
+                    <div class="col-md-12 float-left">
+                      LinkedIn -
+                      <a class="mr-1" href="https://www.linkedin.com/in/taheramlaki/"><strong>in/taheramlaki</strong></a>
+                    </div>
+                  </div>
+                  <div class="row text-center justify-content-center" style="padding:6px">
+                    <div class="col-md-12 float-left">
+                      Blog -
+                      <a class="mr-1" href="https://www.taheramlaki.com/profile/resume/"><strong>taheramlaki.com</strong></a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+</body>
+
+</html>
