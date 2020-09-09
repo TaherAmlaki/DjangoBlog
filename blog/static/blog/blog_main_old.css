@@ -1,11 +1,4 @@
 
-html, body {
-  background: #E6ECF2;
-  margin: 0px;
-  min-height: 100%;
-  width: 100%;
-}
-
 .blog-wrapper {
   display: flex;
   width: 100%;
@@ -15,13 +8,20 @@ html, body {
 
 
 #sidebar {
+  min-width: 20%;
+  max-width: 20%;
+  min-height: 100vh;
+  position: fixed;
+  top: 4em;
+  left: 0;
+  z-index: 99;
   background: #7386D5;
   color: #fff;
   transition: all 0.3s;
 }
 
 #sidebar .sidebar-header {
-  padding: 10px;
+  padding: 20px;
   background: #6d7fcc;
 }
 
@@ -41,19 +41,23 @@ html, body {
 
 #sidebar ul.components {
   padding: 20px 0;
+  border-bottom: 1px solid #47748b;
 }
 
-.list-unstyled  a, a:hover, a:focus {
+a, a:hover, a:focus {
   color: inherit;
   text-decoration: none;
   transition: all 0.3s;
 }
 
-#sidebar ul li.active > a, a[aria-expanded="true"] {
-  color: #fff;
-  background: #b8c2ee;
-}
 
+
+html, body {
+  background: #E6ECF2;
+  margin: 0px;
+  min-height: 100%;
+  width: 100%;
+}
 
 .navbar-dark .navbar-nav .nav-link {
     color: rgb(255, 255, 255, 0.7) !important;

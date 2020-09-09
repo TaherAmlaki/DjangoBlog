@@ -6,48 +6,107 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <script src="https://kit.fontawesome.com/82848abd31.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'blog/blog_main.css' %}">
-  <title>TA - {{ TagName }}</title>
+  <title>TA - Posts</title>
   <link rel="icon" href="{% static 'profile_app/my_blog_icon.png' %}" type="image/x-icon">
 </head>
 
 <body>
   {% include 'profile_app/navbar.html' %}
 
-  <div id="tag-articles-container">
-    <h1 class="mb-3 text-center">{{ TagName }} ({{ page_obj.paginator.count }} Posts)</h1>
+  <div id="articles-container">
 
-    {% for article in articles %}
-    <div class="card article-card text-center">
-      <div class="card-header">
-        Article Tags: <strong>{{ article.tags.all|join:", " }}</strong>
-      </div>
-      <div class="card-body">
-        <h5><a href="{% url 'article-detail' article.slug %}">{{ article.title }}</a></h5>
-        <p>{{ article.short_description }}</p>
-        <p>Last Updated @{{ article.date_created }}</p>
+    <div class="row align-items-center justify-content-sm-center">
+      <div class="col-sm-12 d-flex">
+        {% if messages %}
+          {% for message in messages %}
+          <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          {% endfor %}
+        {% endif %}
       </div>
     </div>
-    {% endfor %}
 
-    {% if is_paginated %}
-    {% if page_obj.has_previous %}
-    <a class="btn btn-outline-info mb-4" href="?page=1">First</a>
-    <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-    {% endif %}
-    {% for num in page_obj.paginator.page_range %}
-    {% if page_obj.number == num %}
-    <a class="btn btn-info mb-4" href="?page={{ num }}">{{ num }}</a>
-    {% elif num > page_obj.number|add:'-3' and num > page_obj.number|add:'3' %}
-    <a class="btn btn-outline-info mb-4" href="?page={{ num }}">{{ num }}</a>
-    {% endif %}
-    {% endfor %}
-    {% if page_obj.has_next %}
-    <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.next_page_number }}">Next</a>
-    <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.paginator.num_pages }}">Last</a>
-    {% endif %}
-    {% endif %}
+    <div class="row">
+      <div class="col-md-4 col-sm-12">
+        <div class="card article-card" id="sidebar">
+          <div class="card-header text-center sidebar-header">
+            <h4 class="sidebar-header">Topics</h4>
+          </div>
+          <div class="card-body">
+            <ul class="list-unstyled components">
+              {% for tag, occurances in AllTags.items %}
+              {% if tag.name in ActiveTags %}
+              <li class="active">
+              {% else %}
+              <li>
+              {% endif %}
+              <!-- <li class="active"> -->
+                <a href="{% url 'tag-articles' tag.slug %}" class="whiteAnchor">
+                  <div class="row justify-content-between">
+                    <div class="col-8">
+                      {{ tag.name }}
+                    </div>
+                    <div class="col-4">
+                      <small>{{ occurances }} Posts</small>
+                    </div>
+                  </div>
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="col-md-8 col-sm-12">
+        {% for article in articles %}
+        <div class="card article-card text-center">
+          <div class="card-header">
+            Post Topics:
+            {% for tag in article.tags.all %}
+              {% if forloop.last %}
+              <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>
+              {% else %}
+              <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>,
+              {% endif %}
+            {% endfor %}
+          </div>
+          <div class="card-body">
+            <h5><a href="{% url 'article-detail' article.slug %}">{{ article.title }}</a></h5>
+            <p>{{ article.short_description }}</p>
+            <p class="text-muted">Last Updated @{{ article.date_created }}</p>
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if is_paginated %}
+          {% if page_obj.has_previous %}
+            <a class="btn btn-outline-info mb-4" href="?page=1">First</a>
+            <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+          {% endif %}
+          {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+              <a class="btn btn-info mb-4" href="?page={{ num }}">{{ num }}</a>
+            {% elif num > page_obj.number|add:'-3' and num > page_obj.number|add:'3' %}
+              <a class="btn btn-outline-info mb-4" href="?page={{ num }}">{{ num }}</a>
+            {% endif %}
+          {% endfor %}
+          {% if page_obj.has_next %}
+            <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.next_page_number }}">Next</a>
+            <a class="btn btn-outline-info mb-4" href="?page={{ page_obj.paginator.num_pages }}">Last</a>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
   </div>
 
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>

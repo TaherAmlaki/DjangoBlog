@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/gh/google/code-prettify@master/loader/run_prettify.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <script src="https://kit.fontawesome.com/82848abd31.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'blog/blog_main.css' %}">
   <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
   <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -19,14 +21,7 @@
   {% include 'profile_app/navbar.html' %}
   <div class="article-main">
     <div class="row">
-      <div class="col-md-8 col-sm-12">
-        <div class="container mb-4">
-          <h2 class="article-title text-center">{{ article.title }}</h2>
-        </div>
-        {% block content %}{% endblock %}
-      </div>
-
-      <div class="col-md-4 col-sm-12">
+      <div class="col-lg-4 col-md-12 order-sm-2">
         <div class="card" style="float:left">
           <div class="card-header text-center">
             Topics:
@@ -49,6 +44,14 @@
           </div>
         </div>
       </div>
+
+      <div class="col-lg-8 col-md-12 order-sm-12">
+        <div class="container mb-4">
+          <h2 class="article-title text-center">{{ article.title }}</h2>
+        </div>
+        {% block content %}{% endblock %}
+      </div>
+
     </div>
   </div>
 

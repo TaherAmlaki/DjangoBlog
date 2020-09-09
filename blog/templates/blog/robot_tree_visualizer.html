@@ -1,0 +1,266 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/robot_visualization_big_tree.png' %}" alt="Robot Visualizer">
+</div>
+
+<p>
+    A big automation project can have several layers, many script files and functions or keywords. The project might
+    even be missing a consistent hierarchy structure. Therefore it might be difficult to get a holistic picture of the
+    project, understand how and where each keyword is used. I think visualizing each suite as a graph (tree-like) will
+    help with solving these issues.
+</p>
+
+<p>
+    Robot Framework allows implementation for custom listeners which allows up to hook into keywords. We can execute
+    entire suite as a dryrun so we can collect execution paths and keywords links without using any test data or waiting
+    for external system's response.
+</p>
+<p>
+    In my opinion a good data structure to represent the project is a tree structure. Tree's have hierarchy and that
+    can be a good representation of execution path for each testcase. The link between two keywords means that
+    one of the keywords is the parent of the other one (child keyword), and therefore the parent keyword uses the child
+    keyword. However, technically our end result will not be tree but a graph. In a tree, every node can have at most
+    only one parent, but in our project a keyword can be used by multiple higher level keywords and therefore we will
+    have nodes which have multiple parent.
+</p>
+
+<p>
+    Therefore, we are going to implement a node object in Python which will be used in our graph, then we can implement Robot
+    Framework custom listener. This listener will initialize a new tree when suite execution starts and update the graph
+    by adding new keywords as new nodes to the graph/tree. After that we will execute the given suite and attach our
+    custom listener to the execution. When the execution is completed, we can get the resulted graph data, and pass it to
+    flask web application. This application will render a html template which has a JavaScript code to process the data
+    and visualize it on a browser's page. For this last step I learned something about D3.js a data-driven documents
+    visualization implementation on JavaScript. D3.js create flexible tree visualizations (and many more data strictures).
+    For the initial step of visualizing a tree I searched and found
+    <a href="https://www.youtube.com/watch?v=jfpV7OBptYE&t=1s" target="_blank">this youtube video by Curran Kelleher</a> and took a large
+    portion of my javascript file from him, and for adding new links I found
+    <a href="http://bl.ocks.org/robschmuecker/6afc2ecb05b191359862" target="_blank">this article by Rob Schuecker</a>
+    and used in my project.
+</p>
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Tree Node Implementation In Python</strong></h4>
+</div>
+
+<p>
+    A tree or graph node is very easy to implement but its applications can be very powerful, specially that we need to
+    think about ways to convert the node to plain data later. A node should have a name and that name will be the name
+    returned by Robot Framework. For a suite file or testcase the name is the same as the file or testcase name. For
+    keywords I will use an extended name which is like <em>resource_name</em>.<em>keyword_name</em> (with the dot).
+    The reason is simply because we might have two different keywords in two different files but with same name.
+</p>
+
+<p>
+    A node might have several children, there are other keywords which are represented as children if the parent keyword
+    uses them to execute. I save the children as a list. A node also might have a parent node, parent keyword. Only the
+    first node, called root node, will have no parents and in this project that is the node corresponding to the suite.
+    I have also added a <em>node_type</em> attribute to my nodes to be able to distinguish between suite, testcase, and
+    keyword nodes.
+</p>
+
+<p>
+    We should be able to add a new child node to any node during execution, it means that our keyword might use other
+    keywords to execute and therefore those keywords should be added as children. When we are about to add the new child/keyword
+    we should put the current node as parent to that child node and then save the child node to the list of children.
+    Below is my implementation of a node that satisfies the mentioned requirements.
+</p>
+
+<pre class="prettyprint"><code>class Node:
+    def __init__(self, name: str, node_type: NodeTypes = NodeTypes.KEYWORD):
+        self.parent : "Node" = None
+        self.children: List["Node"] = []
+        self.name = name
+        self.node_type = node_type
+
+    def add_child(self, child: "Node"):
+        child.parent = self
+        self.children.append(child)</code></pre>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Robot Framework Listener</strong></h4>
+</div>
+
+<p>
+    Now is the time to implement the visualizer which will hook into the execution, create the graph, and add new nodes
+    to the graph at the right location of the graph. We need to know when suite, testcase, or a keyword starts because
+    we need to add every new occurrence of them into the graph. For this reason I used robot listener version 2 api,
+    because version 3 does not have start/end keyword methods.
+</p>
+
+<p>
+    The <em>start_suite</em> method will be the method on the listener class that will create a new root node. All other
+    testcases and keywords will be attached at different stages directly or indirectly to it. <em>start_test</em> is
+    another method available which is called when a new testcase execution is started, therefore we will create a new node
+    representing it and attach the node to the suite node (root node). The last start method, <em>start_keyword</em>,
+    is called when a new keyword is starting, we create a new node. Now, how should we connect this keyword node?
+</p>
+
+<p>
+    The issue of adding new keyword node is due to the fact that we are not sure if we should add it to the last node or not.
+    If the last node was another keyword node, then we need to know whether execution of the other keyword has finished
+    or not. If execution of the previous keyword is completed then we should check the keyword or testcase before that.
+    If the execution of previous keyword is not finished then we can add the new keyword node to the most recent node.
+    Conclusion would be that we need to keep track of nodes we are adding and when execution of a node
+    (suite, testcase, or keyword) is completed we need to remove that keyword from the record. This is called a stack data
+    structure. Therefore we need to add <em>end_x</em> methods for suite, testcase, and keywords to remove them from the stack.
+    We always add the new keyword node to the most recent node in stack (at the top of the stack). Below is a representation
+    of stack for a very simple situation.
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/robot_listener_stack.png' %}" alt="Listener Stack">
+</div>
+
+<p>
+    Moreover, I added two more flags, <em>max_level</em> which is an integer that can be used to control how deep the
+    visualization graph will b, and <em>ignore_builtin</em> which is a boolean to control whether to include Robot
+    Framework builtIn keywords. The reason for <em>ignore_builtin</em> inclusion is that it is common to set variables,
+    create some data structure, or run keyword conditionally (using run keyword if and its variations) during test at
+    any level and any keyword which can create many unnecessary nodes and links in the graph. However if you want to see that
+    you can choose that option, by default the graph will not contain BuildIn keywords.
+</p>
+
+<p>
+    This is the listener class which I implemented.
+</p>
+
+<pre class="prettyprint"><code>class VisualizerListener:
+    ROBOT_LISTENER_API_VERSION = 2
+
+    def __init__(self, max_level: int = None, ignore_builtin: bool = True):
+        self.max_level = max_level
+        self.ignore_builtin = ignore_builtin
+        self._current_level = 0
+        self._stack = []
+        self._root = None
+        self.trees = []
+
+    def start_suite(self, name, attributes):
+        self._root = Node(name, NodeTypes.SUITE)
+        self._stack = [self._root]
+
+    def start_test(self, name, attributes):
+        test_node = Node(name, NodeTypes.TEST_CASE)
+        self._root.add_child(test_node)
+        self._stack.append(self._root.children[-1])
+
+    def start_keyword(self, name: str, attributes):
+        self._current_level += 1
+        if self.max_level is None or self._current_level < self.max_level:
+            if self.ignore_builtin and not name.startswith("BuiltIn"):
+                keyword_node = Node(name, NodeTypes.KEYWORD)
+                self._stack[-1].add_child(keyword_node)
+                self._stack.append(self._stack[-1].children[-1])
+
+    def end_keyword(self, name, attributes):
+        if self.max_level is None or self._current_level < self.max_level:
+            if self.ignore_builtin and not name.startswith("BuiltIn"):
+                self._stack.pop()
+        self._current_level -= 1
+
+    def end_test(self, name, attributes):
+        self._stack.pop()
+
+    def end_suite(self, name, attributes):
+        self._stack.pop()
+        self.trees.append(deepcopy(self._root))
+        self.root = None</code></pre>
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Flask Web Application</strong></h4>
+</div>
+
+<p>
+    When we execute the suite and retrieve graph data, then we want to visualize the data in a helpful way. I found out
+    that D3.js, a JavaScript library can do the job. I learned from several references about visualization process and
+    implemented a graph. Every level will has its own random color, nodes and links from them. The file is located
+    at Visualizer/static/graph.js and in this article I am not going through details of my implementation of this JavaScript
+    file.
+</p>
+<p>
+    I serve the data and graph through as a single page Flask web application. The application should be executed from
+    command prompt and one level above <em>Visualizer</em> directory. The command can be like this:
+</p>
+<pre><code>python .\RobotVisualizer\Visualizer\FlaskApp.py -s .\RobotVisualizer\Tests\GetPeople.robot</code></pre>
+
+<p>
+    The first argument after python should be the path to FlaskApp.py file. The options can be passed by their
+    short name (-name) or long name (--longName) after the FlaskApp path. These options are shown below and will be represented
+    as <em>args</em> in the code.
+</p>
+<pre><code>-s or --suite, required, relative or absolute path to .robot file
+-l or --labels, not required, Option to show node labels, default value is False, yes|true|t|y|1 => True
+-ml or --maxlevel, not required, maximum keyword depth, default is infinite, integer values
+-ib or --ignorebuiltin, not required, Option to ignore builtin keywords, default is True</code></pre>
+
+<p>
+    One more step is to prepare the root node for visualization. We can convert the data into a hierarchical data structure
+    represented in a json by keys <em>name</em> and <em>children</em>, and each child in children array will include its
+    name and children. However, this data will not be visualized correctly by <em>D3.js</em> due to the fact that our data
+    does not represent a tree but a graph and therefore some nodes can have multiple parents. To fix this, I represent
+    the data in a more flat as a json array with each node represented as a json object with keys <em>child</em> (the current node)
+    and <em>parent</em>. We will stratify this data structure using D3.js in frontend to convert it to hierarchical data
+    structure. Moreover, I separated the links which will break tree structure. If a node has a second parent, this link will
+    be stored separately so we can plot the first part of the graph, as a tree, directly by D3.js library and add the
+    extra links (the links that connect a child node to its second parent) later.
+</p>
+<pre class="prettyprint"><code>class FlattenGraph:
+    def __init__(self, root: "Node"):
+        self._visited_nodes = set()
+        self.links = [{"child": root.name, "parent": ""}]
+        self.extra_links = []
+        self.leaf_nodes = []
+        self._find_children(root)
+
+
+    def _find_children(self, parent_node: "Node"):
+        if len(parent_node.children) == 0:
+            self.leaf_nodes.append(parent_node.name)
+
+        for child in parent_node.children:
+            if child.name not in self._visited_nodes:
+                self._visited_nodes.add(child.name)
+                self.links.append({"parent": parent_node.name, "child": child.name})
+            else:
+                self.extra_links.append({"parent": parent_node.name, "child": child.name})
+            self._find_children(child)</code></pre>
+
+
+<p>
+    At the high level, the steps are shown below in the FlaskApp.py script, we turn off all logs that Robot Framework
+    creates by default, instantiate the listener with options for depth and BuiltIn keywords inclusion, and specify a
+    <em>dryrun</em> option (otherwise your testcases will actually be executed), execute by Robot Framework run method,
+    flatted the resulted tree (actually it's a graph) and pass the tree_data (this is a tree) and extra links to Flask app
+    and execute the app. When ready the result will be shown at <em>http://127.0.0.1:5000/</em> or your localhost:5000
+    and it is accessible if you open the link on your browser.
+</p>
+<pre class="prettyprint"><code>listener = VisualizerListener(max_level=args['maxlevel'], ignore_builtin=args['ignorebuiltin'])
+options = {"log": None, "output": None, "report": None,
+           "listener": listener, "dryrun": "yes"}
+run(args['suite'], **options)
+
+trees = listener.trees
+flatten = FlattenGraph(trees[0])
+tree_data, extra_links, leaf_nodes = flatten.links, flatten.extra_links, flatten.leaf_nodes
+
+app.run(debug=True)</code></pre>
+
+<p>
+    For a simple testcase the result is as below image and for a more realistic project it will look like the start
+    image at the top of this article.
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/robot_visualization_small_tree.png' %}" alt="Listener Stack">
+</div>
+
+<p>
+    Thank you for your time.
+</p>
+{% endblock content %}

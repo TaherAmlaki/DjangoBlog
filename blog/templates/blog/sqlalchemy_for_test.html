@@ -1,0 +1,245 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Data is very valuable, we need it for performing new computations, creating reports, authenticating, and many more applications.
+    As the result in many situations we want to keep the data in a persistent way so we can use later. Databases are the way to do that.
+    Generally we have two types of databases, <em>relational</em> databases and <em>non-relational</em> databases.
+    In relational databases we store data in tables, rows, and columns with pre-defined schema, but in non-relational databases
+    we can store data in collections without pre-defined schemas.
+</p>
+
+<p>
+    In this post I am going to use Object Relational Mapping (ORM) in Python to store execution data in a relational
+    database (a sqlite db, but by using SQLAlchemy we can easily change this to another relational database like PostgreSQL).
+    To demonstrate the application of ORM with Python, I developed some testcases using Robot Framework
+    (can use any framework or create custom classes in Python) and save testcase information, status and some data into a database.
+    This can be used if you want to keep your tests result and retrieve them later for creating a review or report.
+</p>
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>SQLAlchemy, Object Relational Mapping in Python</strong></h4>
+</div>
+<p>
+    ORM is a programming technique to convert data from and to relational database and objects in object oriented programming.
+    To make it more clear we should check what we need to do with a database in out application. We must be able to do
+    the four CRUD (Create, Read, Update, Delete) operations from our program and also like to have data validation so we
+    do not pollute the database. Doing all of these operations correctly depends requires knowledge of SQL language and
+    also depends on the type of database we use. For example there are small differences between sqlite, PostgreSQL, and MySQL
+    and we need to take them into account. Moreover we like to convert fetched database records into Python objects and
+    convert/serialize Python objects directly into SQL queries.
+</p>
+
+<p>
+    We do not want to create dependency on the type of database we use for our application and parsing and serializing data
+    between Python objects and database requires creating interfaces with concrete implementations for each database. This is
+    where SQLAlchemy comes into play by implementing ORM techniques in Python. By using SQLAlchemy we do not need to worry
+    about parsing/serializing and database types and only need to create usual Python objects which have capability of performing
+    CRUD operations, validations, and conversions.
+</p>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Data Schema, Tables and Columns in SQLAlchemy</strong></h4>
+</div>
+<p>
+    We first is to create a Python class inheriting from SQLAlchemy Base class which will correspond to a table in
+    database. I show part of implementation for a simple table with name people (defined by attribute __tablename__).
+    For each column of the table we need to add a class attribute as <em>Column</em> which is part of sqlalchemy
+    library. For each column we can give the type of data that will be stored, for example python <em>int</em> will be
+    represented by <em>sqlalchemy.Integer</em>, and <em>str</em> with <em>sqlalchemy.String</em> and to protect
+    database from extra long strings we can also give a maximum length to String.
+    This is basically the minimum required implementation and we can start using it directly.
+    Below is an example of this class.
+</p>
+
+<pre class="prettyprint"><code>class Person(Base):
+    __tablename__ = "people"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    age = Column(Integer)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    def save(self, session):
+        session.add(self)
+        session.commit()
+
+    def __repr__(self):
+        return f"Person(id={self.id}, name={self.name}, "\
+               f"age={self.age}, timestamp={self.timestamp})" </code></pre>
+
+<p>
+    To have a working flow we first create Base from sqlalchemy, then create/define/import our model(s). Models have to
+    be imported before creating database. The we create an engine which will communicate with database and here in only one
+    line we define which type of database we want to use. Changing the database type is as simple as changing
+    <em>create_engine</em> argument. Then we create a sqlalchemy session object. Session object will establish all
+    communications with database and all conversions. Now we create an instance of our data model (People in this example)
+    and modify its attributes, and finally we save the new person into the database.
+</p>
+
+<pre class="prettyprint"><code>from datetime import datetime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Column, String, DateTime, Integer
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Column, String, DateTime, Integer
+
+
+Base = declarative_base()
+
+
+class Person(Base):...
+
+"""
+creating database, for this to create all tables the models should already
+be imported or defined
+"""
+engine = create_engine("sqlite:///people.db")
+Base.metadata.create_all(bind=engine)
+
+Session = sessionmaker(bind=engine)
+session = Session()
+
+person = Person()
+person.name, person.age = "Taher", 128
+person.save(session)</code></pre>
+
+<p>
+    Since we defined <em>__repr__</em> in our model, printing the person object result in
+</p>
+<pre><code>Person(id=4, name=Taher, age=128, timestamp=2020-08-06 17:44:30.551349)</code></pre>
+
+<p>
+    To view the data in the sqlite database we can use <a href="https://sqlitebrowser.org/" target="_blank">DB Browser for SQLite</a>,
+    it is small and free database viewer for sqlite, and the result looks like the below image.
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/sqlite_people_1.png' %}" alt="DB Browser SQLite">
+</div>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Design Considerations</strong></h4>
+</div>
+<p>
+    There are a few design tips for using SQLAlchemy in a larger application. First we should think about defining models.
+    They all need to inherit from Base class, therefore Base needs to be instantiated before any model is imported in the
+    application's flow. To solve this I created a python file which initiates Base in it so when it is imported Base will
+    be available and because the way Python works with importing repeated files, it will only be initiated once.
+</p>
+<p>
+    Another important point is controlling scope of session object. Session is the main object to communicate with database
+    but it also holds references of the model objects which are loaded or created with it. Some frameworks like flask have
+    their own sqlalchemy library and control the lifespan of the session according to their needs, like creating and closing session
+    with receiving and responding of a web request in flask.
+</p>
+<p>
+    For our application we need to control the session's lifespan ourselves.
+    In order to do that we need to understand what
+    processes need session so we can create/close session at start/end of those processes. Before that we need to separate
+    session from our models. For this reason and another reason related to Robot Framework work flow, all the CRUD functionality
+    in our models need an explicit session passed to them from external source to work. In our application the main process
+    is executing a testcase so I will create a new session at <em>Test Setup</em> and close it at <em>Test Teardown</em>.
+    You can find SQLAlchemy documentation on session
+    <a href="https://docs.sqlalchemy.org/en/13/orm/session_basics.html" target="_blank">here</a>.
+</p>
+<p>
+    Another point which is not as fundamental as the previous two, is that since we are going to have multiple models and they
+    all have the same save, update, delete, and __repr__ methods, I created a base class and moved all these methods to it.
+    The class inherits from sqlalchemy Base and therefore our models will still be valid when they inherit from this base model.
+    We only have to tell to SQLAlchemy that this is not a table, and that can be done by adding __abstract__ = True to the
+    class and not having __tablename__. Models which have concrete implementation of table will have __tablename__.
+</p>
+
+<p>
+    Almost all databases will have more than one table and also the data in tables will have relationships with each other.
+    Thus, I decided to have two tables with a relationship between them. In the next section I will create a test automation
+    project and a SQLite database with two tables, testcase and people tables. In some tests we might get information on some
+    person and we store it in people table. There is a relationship between that person and the testcase which was being executed
+    and I added people table backref to testcases table and <em>test_id</em> as <em>ForeignKey</em> in people table.
+    Below is the design of this database tables.
+</p>
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/sqlalchemy_test.png' %}" alt="SQLite Database Diagram">
+</div>
+
+
+<!--=========================================================================-->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>An Application of SQLAlchemy in Test Automation</strong></h4>
+</div>
+<p>
+    The above tables will be implemented in Python as classes was below. The DataModel will directly inherit from
+    SQLAlchemy Base model and has implements basic save, delete, and update functionality. The read (find_by_id) is
+    not implemented here because each table has its own id name, TestCase id name is test_id and People has person_id.
+    As the result, implementing find/read methods is with the child classes.
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/robot_sqlalchemy_classes.png' %}" alt="SQLAlchemy Data Classes">
+</div>
+
+<p>
+    Since we are going to execute testcases in Robot Framework, I chose to define session scope the same as testcase lifespan.
+    Therefore, I will create a new session right before starting with execution of a testcase, at <em>Test Setup</em>,
+    perform updating, adding transactions during the test and close the session just after the testcase execution is
+    completed at <em>Test Teardown</em>. I will add testcase to database at Test Setup and update its status at Test Teardown.
+</p>
+
+<p>
+    Also to be sure that the database and tables are initiated I added a <em>Suite Setup</em> to the test suite to create
+    database, if the database already exists this will do nothing but if database does not exist then it will create it.
+</p>
+<pre class="prettyprint"><code>*** Settings ***
+Library  Models.TestCaseModel.TestCase  WITH NAME  TestCase
+Library  db.sessionHelper  WITH NAME  sess_helper
+
+
+*** Keywords ***
+Test Setup For DB
+    ${session}  ${engine} =  sess_helper.create_new_session
+    set test variable  ${db_session}  ${session}
+
+    ${test} =  get library instance  TestCase
+    ${test.test_name} =  set variable  ${TEST NAME}
+    ${test.suite_name} =  set variable  ${SUITE NAME}
+    ${test.status} =  set variable  started
+    TestCase.save  ${db_session}
+    set test variable  ${test_id}  ${test.test_id}
+
+Test Teardown For DB
+    ${test} =  TestCase.find_by_test_id  test_id=${test_id}  session=${db_session}
+    ${test.status} =  set variable  ${TEST STATUS}
+    TestCase.update  ${db_session}
+    sess_helper.close_session  ${db_session}</code></pre>
+
+<p>
+    To save a new person into the database we can use the <em>PeopleHelper.resource</em>, and implementation is as below.
+    In Robot Framework creating an instance of a Python class and modifying that instance required getting the currently active
+    instance of that object by <em>get library instance</em> and passing class name to it as argument.
+</p>
+<pre class="prettyprint"><code>*** Settings ***
+Library  Models.PeopleModel.People  WITH NAME  People
+
+*** Keywords ***
+Save New Person To DB
+    [Arguments]  ${name}  ${test_id}
+    ${person} =  get library instance  People
+    ${person.name} =  set variable  ${name}
+    ${person.test_id} =  set variable  ${test_id}
+    People.save  ${db_session}
+    set test variable  ${person_id}  ${person.person_id}</code></pre>
+
+<p>
+    Thank you for your time.
+</p>
+{% endblock content %}
