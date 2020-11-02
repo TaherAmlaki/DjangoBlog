@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 {% load static %}
+{% load crispy_forms_tags %}
 <html lang="en">
 
 <head>
@@ -20,17 +21,34 @@
 <body>
   {% include 'profile_app/navbar.html' %}
   <div class="article-main">
+
     <div class="row">
       <div class="col-lg-4 col-md-12 order-sm-2">
+
+        <div class="row align-items-center justify-content-md-center">
+          <div class="col-sm-12 d-flex justify-content-md-center">
+            {% if messages %}
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show text-center" role="alert">
+              {{ message }}
+              <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            {% endfor %}
+            {% endif %}
+          </div>
+        </div>
+
         <div class="card" style="float:left">
           <div class="card-header text-center">
             Topics:
             {% for tag in article.tags.all %}
-              {% if forloop.last %}
-              <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>
-              {% else %}
-              <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>,
-              {% endif %}
+            {% if forloop.last %}
+            <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>
+            {% else %}
+            <a href="{% url 'tag-articles' tag.slug %}"><strong>{{ tag.name }}</strong></a>,
+            {% endif %}
             {% endfor %}
           </div>
           <div class="card-body text-justify">
@@ -38,23 +56,138 @@
             <p class="card-text">
               <small class="text-muted">{{ article.date_created }}</small>
               {% if article.git_url %}
-                <small class="text-muted"> - <a href="{{ article.git_url }}">Code in Github</a></small>
+              <small class="text-muted"> - <a href="{{ article.git_url }}" target="_blank">Code in Github</a></small>
               {% endif %}
             </p>
           </div>
         </div>
+
+        <div class="card" style="float:left; border: none">
+          <div class="media mt-3" style="border: 1px solid #E1E5E8; padding: 5px">
+            <img class="mt-1 mr-2 align-self-start" id="resume-about-me-img" src="{% static 'profile_app/my_new_pic.png' %}" alt="My Picture">
+            <div class="media-body text-justify">
+              <h5 class="mt-0">Taher Amlaki, PhD</h5>
+              <small class="text-muted">Python Developer, Machine Learning Enthusiast, Test Automation Engineer</small>
+              <br>
+              {{ about_me.short_version }}
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <div class="col-lg-8 col-md-12 order-sm-12">
-        <div class="container mb-4">
-          <h2 class="article-title text-center">{{ article.title }}</h2>
+        <div class="container">
+          <div class="container mb-4">
+            <h2 class="article-title text-center">{{ article.title }}</h2>
+          </div>
+          {% block content %}{% endblock %}
         </div>
-        {% block content %}{% endblock %}
+
+        {% if comments %}
+        <div class="container">
+          <br>
+          <h1 class="mb-4" style="border-bottom:2px solid #42586e">Comments</h1>
+          {% for comment in comments %}
+          <div class="media border mb-0 mt-3" style="background-color: #EDF1F7; padding-top: 10px">
+            <div class="media-body">
+              <div class="container">
+                <div class="row justify-content-between">
+                  <div class="col-8">
+                    <h5 class="mt-0 mb-1">
+                      <small class="text-muted">user</small> <strong>{{ comment.name }}</strong>
+                    </h5>
+                    <h5><small class="text-muted">{{ comment.date_added|date:"M d, Y" }}</small></h5>
+                  </div>
+
+                  <div class="col-2">
+                    <button type="button" id="commentButton-{{ comment.id }}" class="btn btn-secondary" onclick="showReplyForm(this.id)">Reply</button>
+                  </div>
+                </div>
+              </div>
+              <p class="ml-3">{{ comment.text }}</p>
+            </div>
+          </div>
+
+          {% if comment.replies %}
+          {% for reply in comment.replies.all %}
+          <div class="media border mt-0" style="background-color: #EDF1F7; padding-top: 10px">
+            <div class="media-body">
+              <div class="container">
+                <div class="row justify-content-between">
+                  <div class="col-md-8 col-sm-12">
+                    <h5 class="mt-0 mb-1">
+                      <small class="text-muted">user</small> <strong>{{ reply.name }}</strong>
+                    </h5>
+                    <h5><small class="text-muted">{{ reply.date_added|date:"M d, Y" }}</small></h5>
+                  </div>
+
+                  <div class="col-md-2 col-sm-12">
+                    <button type="button" id="replyButton-{{ comment.id }}" class="btn btn-secondary" onclick="showReplyForm(this.id)">Reply</button>
+                  </div>
+                </div>
+              </div>
+              <p class="ml-3">{{ reply.text }}</p>
+
+            </div>
+          </div>
+          {% endfor %}
+          {% endif %}
+
+
+          <div class="container d-none" id="replyContainer-{{ comment.id }}" style="background-color:#EDF1F7; padding:5px">
+            <form method="POST">
+              {% csrf_token %}
+              <fieldset class="form-group">
+                <h4 class="mb-4" style="border-bottom:2px solid #42586e">Leave A Reply</h4>
+                <div class="row">
+                  <input type="hidden" name="reply_id" value="{{ comment.id }}">
+                  <div class="col-sm-6">
+                    {{ form.name|as_crispy_field }}
+                  </div>
+                </div>
+                {{ form.text|as_crispy_field }}
+              </fieldset>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Submit Your Reply</button>
+                <button type="button" class="btn btn-danger" value="Reset" onclick="removeReplyForm(this)">Cancel</button>
+              </div>
+            </form>
+          </div>
+
+
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="container">
+          <br>
+          <br>
+          <form method="POST">
+            {% csrf_token %}
+            <fieldset class="form-group">
+              <h1 class="mb-4" style="border-bottom:2px solid #42586e">Leave A Comment</h1>
+              <div class="row">
+                <div class="col-sm-6">
+                  {{ form.name|as_crispy_field }}
+                </div>
+              </div>
+              {{ form.text|as_crispy_field }}
+            </fieldset>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Submit Your Comment</button>
+              <button type="button" class="btn btn-danger" value="Reset" onclick="this.form.reset()">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+
       </div>
 
     </div>
-  </div>
 
+  </div>
+  <script src="{% static 'blog/article.js' %}"></script>
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>

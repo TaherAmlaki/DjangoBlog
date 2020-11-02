@@ -1,0 +1,340 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    The volume of data available for processing and analyzing in increasing with a rapid speed. Although more data means
+    that we can create more powerful models, it also means that we need better implementations to store and also access
+    the data. My motivation to write this article comes from my attempt to create a language model based on Wikipedia
+    dump data. The dump is available online but it is a very large xml file, with zipped version being somewhere around
+    17 GB and extracted version more that 70 GB. This means that I cannot read the file in my memory and also analyzing
+    the articles is going to take a very long time.
+</p>
+
+<p>
+    To solve the problem with file size for memory, I looked into Python's packages, xml.sax and xml.etree and found out
+    that by using these libraries I can read Wikipedia xml dump file element by element. I will also use zipped file since
+    the dump file is zipped as <em>.bz2</em> file I was able to use <em>bz2</em> library to read the file without unzipping it.
+    To solve the problem with speed of processing raw articles in Wikipedia dump, I will use Python multiprocessing package
+    and create a pipeline.
+</p>
+
+<p>
+    At the first part of this article I demonstrate xml.sax and xml.etree packages and in the second half I show how to
+    implement a data extraction pipeline.
+</p>
+
+
+<!--========================================================================================-->
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Reading A Xml File Iteratively</strong></h4>
+</div>
+<p>
+    Let's start with <a href="https://docs.python.org/3/library/xml.sax.html" target="_blank"><em>xml.sax</em></a>
+    package. To parse a file we can use <em>parse</em> method available in this library which has this signature:
+</p>
+<pre><code>xml.sax.parse(filename_or_stream, handler, error_handler=handler.ErrorHandler())</code></pre>
+
+<p>
+    We should pass a file path or file stream object, and handler which must be a sax <em>ContentHandler</em>. We also
+    might pass our own error handler but for this article I would rely on sax default implementation of <em>ErrorHandler</em>.
+    Handler is the most important part of our pipeline for xml.sax.
+</p>
+
+<p>
+    <a href="https://docs.python.org/3/library/xml.sax.handler.html#xml.sax.handler.ContentHandler" target="_blank">ContentHandler class</a>
+    of xml.sax package has default implementations that we will use when a new xml element is starting or ending and when
+    content of element are being read. We usually inherit ContentHandler and overwrite the methods that we need. For our
+    purpose here I would use <em>startElement</em>, <em>endElement</em>, and <em>characters</em> methods.
+</p>
+
+<p>
+    First, let's have a look at one of the first articles in wikipedia dump (I changed the text element's content):
+</p>
+
+<pre><code>&lt;page&gt;
+    &lt;title&gt;Anarchism&lt;/title&gt;
+    &lt;ns&gt;0&lt;/ns&gt;
+    &lt;id&gt;12&lt;/id&gt;
+    &lt;revision&gt;
+        &lt;id&gt;766348469&lt;/id&gt;
+        &lt;parentid&gt;766047928&lt;/parentid&gt;
+        &lt;timestamp&gt;2017-02-19T18:08:07Z&lt;/timestamp&gt;
+        &lt;contributor&gt;
+            &lt;username&gt;GreenC bot&lt;/username&gt;
+            &lt;id&gt;27823944&lt;/id&gt;
+        &lt;/contributor&gt;
+        &lt;minor/&gt;
+        &lt;comment&gt;Reformat 1 archive link. [[User:Green Cardamom/WaybackMedic_2.1|Wayback Medic 2.1]]&lt;/comment&gt;
+        &lt;model&gt;wikitext&lt;/model&gt;
+        &lt;format&gt;text/x-wiki&lt;/format&gt;
+        &lt;text xml:space="preserve"&gt;Some cool things about Anarchism.&lt;/text&gt;
+    &lt;/revision&gt;
+&lt;/page&gt;</code></pre>
+
+<p>
+    Wikipedia dump will have a &lt;page&gt; element for each article and I want to save content of &lt;title&gt; and
+    &lt;text&gt; elements for processing them later. In order to do so, I will save title and text content in a page dictionary
+    and for each page (for now only one page) its dictionary will save it into a read_stack list. We also keep track of
+    tags by saving them in <em>tag_stack</em> list which initialize every time we start a new page element. This is needed
+    because we have to know content of which element is currently being read since we only need some elements.
+    One point to notice is that  <em>ContentHandler.characters</em> might return content of an element in multiple
+    chunks of characters data so we might need to concatenate the chunks together. My implementation is as follows:
+</p>
+
+<pre class="prettyprint"><code>import xml.sax
+
+class CustomContentHandler(xml.sax.handler.ContentHandler):
+    def __init__(self):
+        self._page = None
+        self._tags_stack = None
+        self.read_stack = []
+
+    def startElement(self, name, attrs):
+        if name == "page":
+            self._page = {"title": "", "text": ""}
+            self._tags_stack = []
+
+        if self._page is not None:
+            self._tags_stack.append(name)
+
+    def endElement(self, name):
+        if self._page is not None:
+            if self._tags_stack[-1] == "page":
+                self.read_stack.append((self._page['title'], self._page['text']))
+                self._page = None
+                self._tags_stack = None
+            else:
+                del self._tags_stack[-1]
+
+    def characters(self, content):
+        if self._page is not None:
+            if self._tags_stack[-1] == "title":
+                self._page['title'] += content
+            elif self._tags_stack[-1] == "text":
+                self._page['text'] += content
+
+
+handler = CustomContentHandler()
+xml.sax.parse("./wikiToyData.xml", handler)
+print(handler.read_stack)
+===============================================
+[('Anarchism', 'Some cool things about Anarchism.')]</code></pre>
+
+<p>
+    Now, let's see how we can do a similar thing with
+    <a href="https://docs.python.org/3/library/xml.etree.elementtree.html" target="_blank"><em>xml.etree.ElementTree</em></a>
+    module (ET as abbreviation). The main class we will use to iterate through xml file is
+    <em>ET.iterparse(source, events=None, parser=None)</em> with "<em>start</em>" and "<em>end</em>" events which will
+    indicate starting of an element and ending of element. I did not need a parser since I will be implementing processing
+    elements content as separate processes.
+</p>
+
+<p>
+    To take one step forward I will also start using Python's multiprocessing Queue object instead of read_stack. I will
+    put the dictionary of each page into Queue object and when reading xml file is completed I will read the queue (we
+    do not have to wait for parsing to finish completely, here it is easier to illustrate the mechanism but later
+    we will use a design that reads the queue during parsing).
+    Because the pipeline will have two threads and multiple processes, queue is the appropriate object to pass data between
+    them. Using queue will prevent unexpected inter-connections between different classes and we also avoid problems with
+    accessing the same objects with several processes and threads without the need to use resource lock.
+</p>
+
+<p>
+    We can implement parser for ET class as below. This class does not have the same methods as <em>xml.sax</em> contentHandler
+    but we also are not going to directly use <em>startElement</em>, <em>endElement</em>, and <em>characters</em> methods
+    of <em>xml.sax</em> content handler, therefore the two classes do not have to be implementing the same methods.
+</p>
+<pre class="prettyprint"><code>import xml.etree.ElementTree as ET
+from multiprocessing import Manager
+
+class ETParser:
+    def __init__(self, file_path, queue):
+        self._file_path = file_path
+        self._page = None
+        self._tags_stack = None
+        self._queue = queue
+
+    def parse(self):
+        for event, element in ET.iterparse(self._file_path, events=('start', 'end')):
+            tag_name = element.tag.rsplit("}", 1)[-1].strip()
+
+            if event == "start":
+                if tag_name == "page":
+                    self._page = {"title": "", "text": ""}
+                    self._tags_stack = []
+
+                if self._page is not None:
+                    self._tags_stack.append(tag_name)
+            else:  # elif event == "end"
+                if self._page is not None:
+                    if self._tags_stack[-1] == "title":
+                        self._page['title'] += element.text
+                    elif self._tags_stack[-1] == "text":
+                        self._page['text'] += element.text
+
+                    if self._tags_stack[-1] == "page":
+                        self._queue.put((self._page['title'], self._page['text']))
+                        self._page = None
+                        self._tags_stack = None
+                    else:
+                        del self._tags_stack[-1]
+
+           # we should clear element object, otherwise memory will be filled quickly
+            element.clear()
+
+if __name__ == "__main__":
+    manager = Manager()
+    queue = manager.Queue()
+    parser = ETParser("./wikiToyData.xml", queue)
+    parser.parse()
+
+    while not queue.empty():
+        print(queue.get())
+===============================================
+('Anarchism', 'Some cool things about Anarchism.')
+</code></pre>
+
+
+<!--========================================================================================-->
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Parsing, Processing, and Saving Wikipedia Articles in a Pipeline</strong></h4>
+</div>
+<p>
+    Now that we have the basic usage of xml.sax and xml.etree.ElementTree, it is time to use them in an end-to-end pipeline
+    where we will read the Wikipedia xml dump file iteratively in a separate thread, save the data into a queue, and process
+    the data in the queue with multiple Python processes and put the processed result into another queue which will
+    write the data into text files in multiple threads.
+</p>
+
+<p>
+    There are some points to notice before starting with concrete implementation of functions and classes. We need to
+    finish processes and threads gracefully and on the right time. To do so I use two different events
+    (<em>multiprocessing.Event</em> objects), one for indicate end of lifetime for processes and one for indicating end of
+    lifetime for write threads. The processes should not be terminated until writing is completed, otherwise write threads
+    will loose their access to write queue, so when the wikipedia's xml file is completely read, a <em>write_shutdown_event</em>
+    will be set by the xml parser. As the result the write threads will only continue until <em>write_queue</em> is
+    completely empty, then they will close their files, and set <em>process_shutdown_event</em>. Processes then will be
+    notified of shutdown event being set and terminate their while loops. In the main program we will first join the
+    writing threads and then processes.
+</p>
+
+<p>
+    The entire execution will take a few hours (a little bit more than 4 hours for me) and I added a
+    <em>print_info</em> function with <em>report_queue</em>. The write threads will put a value (can be any value) into
+    the read_queue after a page is processed and written to file, and report_info will keep track of the number of pages.
+    At every 10_000 pages (wikipedia articles) <em>print_info</em> will print the number of processed pages and time consumed.
+</p>
+
+<p>
+    I depicted structure of the pipeline as below:
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/wiki_xml_pipeline.png' %}" alt="Wikipedia Pipeline">
+</div>
+
+<p>
+    So for the main part of our implementation, we start by creating queues and events. Then we will initialize the processes
+    and save them in a list for later to join them. The output file objects are initiated and then writing threads are
+    started, and also the print information thread started after them.
+</p>
+
+<p>
+    We will use <em>bz2</em> package to create a <em>BZ2File</em> object and to this object we will pass the xml dump file
+    location, and then pass this object as argument to the parser. I have downloaded a multi-stream capable Wikipedia
+    dump file and tried using <em>bz2file</em> package to exploit multi-stream capability for performance boost but
+    did not see any significant change in execution time, therefore I reverted back to <em>bz2</em> package here.
+</p>
+
+<p>
+    In the process function (and similarly in write functions) I will check if shutdown event is set and read_queue is empty.
+    If one of these conditions are not true then I continue with processing. In that stage I will check if queue is not
+    empty and if there is some data in queue I will get the corresponding page from the queue.
+</p>
+
+<pre class="prettyprint"><code>while not (shutdown_event.is_set() and read_queue_.empty()):
+    if not read_queue_.empty():
+        page = read_queue_.get()</code></pre>
+
+<p>
+    I have also experimented with the number of output files/threads and found out that for the combination of the processes that
+    I have, two output threads will result in the best performance. Splitting the processes sentences into multiple files
+    will also keep the size of the <em>.txt</em> files smaller, however the resulting files are of several Gigabytes and
+    should not be opened directly. For later usage we can create a threading pool to spawn enough threads to read these
+    files line by line.
+</p>
+
+<p>
+    In my examination <em>ElementTree</em> implementation was faster than <em>xml.sax</em> implementation therefore I am using
+    ET parser, however I left the xml.sax parser as commented lines in the code if you prefer to check it yourself.
+    Below is the main script the way I have implemented.
+</p>
+
+<pre class="prettyprint"><code>if __name__ == "__main__":
+    queue_manager = Manager()
+    read_queue = queue_manager.Queue(maxsize=2000)
+    output_queue = queue_manager.Queue(maxsize=2000)
+    report_queue = queue_manager.Queue(maxsize=1000)
+
+    process_shutdown_event = Event()
+    write_shutdown_event = Event()
+
+    processes = []
+    num_workers = max(1, cpu_count() - 1)
+    for p in range(num_workers):
+        p = Process(target=process_entries,
+                    args=(read_queue, output_queue, process_shutdown_event))
+        p.start()
+        processes.append(p)
+
+    cur_dir = os.path.dirname(os.path.realpath(__file__))
+    output_files = [open(os.path.join(cur_dir, "./wikipedia_sentences_1.txt"), "w", encoding="utf-8"),
+                    open(os.path.join(cur_dir, "./wikipedia_sentences_2.txt"), "w", encoding="utf-8")]
+
+    output_threads = [Thread(target=write_to_file,
+                             args=(output_file, output_queue, report_queue,
+                                   write_shutdown_event, process_shutdown_event))
+                     for output_file in output_files]
+
+    print_info_thread = Thread(target=print_info,
+                               args=(report_queue, process_shutdown_event))
+
+    for output_thread in output_threads:
+        output_thread.start()
+
+    print_info_thread.start()
+
+    wiki_file_obj = BZ2File(os.path.join(cur_dir, "./enwiki-20200920-pages-articles-multistream.xml.bz2"))
+
+    # parsing with xml.sax
+    # handler = CustomContentHandler(read_queue, write_shutdown_event)
+    # xml.sax.parse(wiki_file_obj, handler)
+
+    # parsing with xml.etree.ElementTree
+    et_wiki_parser = ETParser(wiki_file_obj, read_queue, write_shutdown_event)
+    et_wiki_parser.parse()
+
+
+    for thread in output_threads:
+        thread.join()
+
+    for p in processes:
+        p.join()
+
+    print_info_thread.join()</code></pre>
+
+<p>
+    The result of pipeline are <em>txt</em> files with every line in English language Wikipedia dump taking a line. I
+    have removed redirects since they do not have any meaningful text and also the lines which start with some special
+    characters ([, *, -, |, =, <, {, !, }, #, :, ;). The resulted lines can be used in Natural Language Processing tasks,
+    but some extra processing like indexing unique words and counting their number of occurrences and tokenizing sentences
+    should be performed before they become ready for direct use. The full implementation can be found in my github, checkout
+    the footer of the short description on the top left.
+</p>
+
+<!--========================================================================================-->
+<p>
+    Thank you for your time.
+</p>
+{% endblock content %}
