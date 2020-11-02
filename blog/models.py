@@ -28,5 +28,15 @@ class Article(models.Model):
         return self.slug
 
 
+class Comment(models.Model):
+    article = models.ForeignKey(Article, related_name="comments", on_delete=models.CASCADE)
+    reply = models.ForeignKey('self', null=True, blank=True, related_name="replies", on_delete=models.CASCADE)
+    name = models.CharField(max_length=50)
+    text = models.TextField(max_length=255)
+    date_added = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['date_added']
 
+    def __str__(self):
+        return f"{self.article} - {self.name}"
