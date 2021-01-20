@@ -1,13 +1,15 @@
 from django.shortcuts import render, redirect
 from django.contrib import messages
+from django.http import HttpResponse
 from django.views.generic.list import ListView
 from django.views.generic import View
 from django.http import FileResponse, Http404
 from django.core.mail import send_mail, BadHeaderError
+from django.template.loader import get_template
 from .models import (ProfileSection, AboutMe, ExperiencesModel,
-                     EducationModel, CertificatesModel, SkillsModel)
+                     EducationModel, CertificatesModel, SkillsModel, ProjectsModel)
 from .MyForms import ContactForm
-from .PdfRenderer import render_pdf
+from .PdfRenderer import render_to_pdf
 
 
 def home(request):
@@ -72,10 +74,11 @@ class ResumeView(ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['experiences'] = ExperiencesModel.objects.all()
+        context['experiences'] = ExperiencesModel.objects.all().order_by('-start_date')
         context['skills'] = SkillsModel.objects.order_by('level').reverse()
         context['educations'] = EducationModel.objects.all()
         context['about_me'] = AboutMe.objects.first()
+        context['projects'] = ProjectsModel.objects.all().order_by("-order")
 
         ind = 0
         for experience in context.get('experiences'):
@@ -90,35 +93,66 @@ class ResumeView(ListView):
             experiences = skill.experiences.split(";")
             context["skills"][ind].experiences = experiences
             ind += 1
+        
+        context["ResumeSkills"] = {"Programming": [],
+                                   "WebFrameworks": [],
+                                   "DevOps": [],
+                                   "Other": []}
+        for skill in context.get("skills"):
+            if skill.area == "Programming":
+                context["ResumeSkills"]["Programming"].append(skill)
+            elif skill.area == "Web Frameworks":
+                context["ResumeSkills"]["WebFrameworks"].append(skill)
+            elif skill.area == "DevOps":
+                context["ResumeSkills"]["DevOps"].append(skill)
+            else:
+                context["ResumeSkills"]["Other"].append(skill)
+
         return context
 
 
-# class ResumePdfView(ListView):
-#     template_name = 'profile_app/resume-pdf-test.html'
-#     context_object_name = "resume"
-#     queryset = ExperiencesModel.objects.all()
-#
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         context['experiences'] = ExperiencesModel.objects.all()
-#         context['skills'] = SkillsModel.objects.order_by('level').reverse()
-#         context['educations'] = EducationModel.objects.all()
-#         context['about_me'] = AboutMe.objects.first()
-#
-#         ind = 0
-#         for experience in context.get('experiences'):
-#             tasks = experience.tasks.split(";")
-#             context['experiences'][ind].tasks = tasks
-#             ind += 1
-#
-#         context["progressbar_width"] = []
-#         ind = 0
-#         for skill in context.get("skills"):
-#             context["skills"][ind].level = skill.level * 10
-#             experiences = skill.experiences.split(";")
-#             context["skills"][ind].experiences = experiences
-#             ind += 1
-#         return context
+class ResumePdfView(ListView):
+    template_name = 'profile_app/resume-pdf-plain.html'
+    context_object_name = "resume"
+    queryset = ExperiencesModel.objects.all()
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['experiences'] = ExperiencesModel.objects.all().order_by("-start_date")
+        context['skills'] = SkillsModel.objects.order_by('level').reverse()
+        context['educations'] = EducationModel.objects.all()
+        context['about_me'] = AboutMe.objects.first()
+        context['projects'] = ProjectsModel.objects.all().order_by("-order")
+
+        ind = 0
+        for experience in context.get('experiences'):
+            tasks = experience.tasks.split(";")
+            context['experiences'][ind].tasks = tasks
+            ind += 1
+
+        context["progressbar_width"] = []
+        ind = 0
+        for skill in context.get("skills"):
+            context["skills"][ind].level = skill.level * 10
+            experiences = skill.experiences.split(";")
+            context["skills"][ind].experiences = experiences
+            ind += 1
+
+        context["ResumeSkills"] = {"Programming": [],
+                                   "WebFrameworks": [],
+                                   "DevOps": [],
+                                   "Other": []}
+        for skill in context.get("skills"):
+            if skill.area == "Programming":
+                context["ResumeSkills"]["Programming"].append(skill)
+            elif skill.area == "Web Frameworks":
+                context["ResumeSkills"]["WebFrameworks"].append(skill)
+            elif skill.area == "DevOps":
+                context["ResumeSkills"]["DevOps"].append(skill)
+            else:
+                context["ResumeSkills"]["Other"].append(skill)
+        
+        return context
 
 
 def resume_pdf_view(request):
@@ -149,3 +183,4 @@ def contact_me(request):
             except BadHeaderError:
                 messages.error(request, f"Sorry, Could not send the message. Maybe the form is not valid")
     return render(request, 'profile_app/contact_me.html', {'form': form})
+

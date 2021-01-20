@@ -13,30 +13,54 @@
             <img class="align-self-start mt-1" id="resume-about-me-img" src="{% static 'profile_app/my_new_pic.png' %}" alt="My Picture">
             <div class="media-body" style="margin-right:10px;margine-left:0">
               <h5>Taher Amlaki</h5>
-              <p><em>Python Developer</em></p>
+              <p>Software Engineer</p>
               <p class="mt-0 text-justify" style="font-size:13px;">{{ about_me.short_version }}</p>
             </div>
           </div>
         </div>
+
+        <!------------------------ SKILLS ------------------------>
+        {% for skill_name, skills in ResumeSkills.items %}
+        <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
+            <div class="card" style="width:100%">
+              <div class="card-header">
+                <h5><strong>{{ skill_name }} Skills</strong></h5>
+              </div>
+              <div class="card-body">
+                {% for skill in skills %}
+                <div class="row" style="padding:10px">
+                  <h6><strong>{{ skill.title }}</strong></h6>
+                  <ul class="text-left unstyled">
+                    {% for experience in skill.experiences %}
+                    <li>{{ experience }}</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+
         <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
           <div class="card" style="width:100%">
             <div class="card-header">
-              <h5><strong>Technical Skills</strong></h5>
+              <h5><strong><a href="{% url 'educations' %}">Education</a></strong></h5>
             </div>
             <div class="card-body">
-              {% for skill in skills %}
-              <div class="row" style="padding:10px">
-                <h6><strong>{{ skill.title }} @{{ skill.area }}</strong></h6>
-                <ul class="text-left unstyled">
-                  {% for experience in skill.experiences %}
-                  <li>{{ experience }}</li>
-                  {% endfor %}
-                </ul>
+              {% for education in educations %}
+              <div class="row text-center justify-content-center" style="padding:12px">
+                <div class="col-md-12 float-left">
+                  <strong>{{ education.title }}</strong>
+                  <a class="mr-1" href="{{ education.university_link }}">@{{ education.university }}</a>
+                </div>
+                <p>{{ education.thesis_title }}</p>
               </div>
               {% endfor %}
             </div>
           </div>
         </div>
+
         <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
           <div class="card" style="width:100%">
             <div class="card-header">
@@ -94,24 +118,39 @@
             </div>
           </div>
         </div>
-        <div class="row text-center justify-content-center align-items-center" style="padding:0px 5px 5px 5px;">
-          <div class="card" style="width:100%">
+
+        <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
+          <div class="card">
             <div class="card-header">
-              <h5><strong><a href="{% url 'educations' %}">Education</a></strong></h5>
+              <h4><strong>Projects</strong></h4>
             </div>
             <div class="card-body">
-              {% for education in educations %}
-              <div class="row text-center justify-content-center" style="padding:12px">
-                <div class="col-md-12 float-left">
-                  <strong>{{ education.title }}</strong>
-                  <a class="mr-1" href="{{ education.university_link }}">@{{ education.university }}</a>
+              <div class="row text-center justify-content-center">
+                {% for project in projects %}
+                <div class="media">
+                  <div class="media-body">
+                    <h6 class="article-title m-0">
+                      <strong>
+                        {{ project.title }}
+                      </strong>
+                      -
+                      <a class="mr-1" href="{{ project.github_link }}">Code In Github</a>
+                    </h6>
+                    <div class="card mb-1 rounded" style="border:none">
+                      <div class="card-body">
+                        <div class="entry-content">
+                          <p>{{ project.description }}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <p>{{ education.thesis_title }}</p>
+                {% endfor %}
               </div>
-              {% endfor %}
             </div>
           </div>
         </div>
+
       </div>
     </div>
   </div>

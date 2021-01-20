@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import User
 
 
 class ProfileSection(models.Model):
@@ -66,19 +65,18 @@ class SkillsModel(models.Model):
     experiences = models.TextField()
     level = models.PositiveSmallIntegerField()
 
-    def __str__(self):
-        return f"{self.title}@{self.area}"
-
-
-class MotivationModel(models.Model):
-    job_title = models.CharField(max_length=25)
-    job_link = models.URLField(default=None, null=True, blank=True)
-    company_name = models.CharField(max_length=25)
-    contact_person = models.CharField(max_length=25, default=None, null=True, blank=True)
-    contact_person_title = models.CharField(max_length=10)
-    company_location = models.CharField(max_length=20, default=None, null=True, blank=True)
-    motivation_body = models.TextField()
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    class Meta:
+        ordering = ['-level']
 
     def __str__(self):
-        return f"{self.job_title}@{self.company_name}"
+        return f"{self.title}@{self.area}-{self.level}"
+
+
+class ProjectsModel(models.Model):
+    title = models.TextField()
+    order = models.IntegerField()
+    description = models.TextField()
+    github_link = models.URLField()
+
+    def __str__(self):
+        return self.title

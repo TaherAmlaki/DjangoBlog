@@ -1,15 +1,19 @@
+from typing import Dict
 from io import BytesIO
 from django.http import HttpResponse
 from django.template.loader import get_template
-import xhtml2pdf.pisa as pisa
+from xhtml2pdf import pisa
 
 
-def render_pdf(template_path: str, context: dict):
-    template = get_template(template_path)
+def render_to_pdf(template_src, context_dict: Dict = None):
+    context = {} if context_dict is None else context_dict
+    template = get_template(template_src)
     html = template.render(context)
-    response = BytesIO()
-    pdf = pisa.CreatePDF(BytesIO(html.encode('UTF-8')), response)
+    result = BytesIO()
+    try:
+        pdf = pisa.pisaDocument(BytesIO(html.encode("ISO-8859-1", errors="replace")), result)
+    except UnicodeEncodeError:
+        pdf = pisa.pisaDocument(BytesIO(html.encode("cp1252")), result)
     if not pdf.err:
-        return HttpResponse(response.getvalue(), content_type='application/pdf')
-    else:
-        return HttpResponse("Error Rendering Pdf", status=400)
+        return HttpResponse(result.getvalue(), content_type='application/pdf')
+    return None
