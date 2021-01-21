@@ -1,0 +1,374 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+<p>
+  We usually add print statements to our code during development to see values of data and objects at the time of execution.
+  This works in small applications during development but for larger applications which are going to be deployed we cannot
+  use it because print will display our objects in console (stdout) and the printed messages will disappear when the
+  program completed or stopped. Another task would be to transfer the console messages from an environment to another
+  one required manual work or another application. This is specially difficult when application is deployed in production.
+</p>
+
+<p>
+  Moreover, print method does not offer enough flexibility to be used in development, test, and production environments.
+  We might want to see more detailed information in development and test but also to not output too much information about our
+  application in production environment because that will pollute our production logs and also creates unnecessary security
+  risks. We might want to add timestamps to our logs, or use specific format for our messages, or save log messages of
+  different parts of our applications in different files, for example frontend and backend into separate log files so
+  investigating bugs in them be easier. Print function by default does not implement any of these requirements and
+  adding wrappers or new implementations to make it do so is time consuming, error-prone, and does not have a standard therefore
+  they might be implemented differently by different developers.
+</p>
+
+<p>
+  Logging is a builtin Python module which allows us to create customizable and flexible logging throughout our
+  application. The <a href="https://docs.python.org/3/howto/logging.html" target="_blank">HOWTO</a> guide is very helpful
+  documentation and good place to start with learning, using and implementing logging. In this article I go through simple logging
+  for small applications and then I will expand it to larger and more complex applications with multiple log files and
+  streams. At the last section I show how to rotate your log files based on file size or time interval.
+</p>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Basic Configuration For Logging and Its Usage</strong></h4>
+</div>
+
+<p>
+  We can start by importing logging module in our code and directly replace print statements, we only need to decide on
+  log levels that we want to have for each message. By default log level is set to <strong>WARNING</strong> therefore any
+  log statement for logging level below warning will not display. Also by default log messages will display on console.
+  We can start with logging.info replacing all print statements or different logging levels for different prints.
+</p>
+
+<p>
+  The next step would be to add some configurations to our logging. An starting point is to define a file name for logs
+  to be saved in, a format for our logging messages and logging level. logging module allows us to add these options by
+  using <strong>logging.basicConfig</strong> method. Allowed arguments for message format is available in
+  <a href="https://docs.python.org/3/library/logging.html" target="_blank">LogRecord attributes</a> in logging
+  documentation. Below I prepared an example code to illustrate usage of basicConfig method and logging messages.
+</p>
+
+
+<pre class="prettyprint"><code>import logging
+
+logging.basicConfig(filename="basicLog.log",
+                    filemode="w",
+                    format="%(asctime)s:%(name)s:%(levelname)s:%(message)s",
+                    level=logging.INFO)
+
+logging.debug("debug message, this will not be displayed.")
+logging.info("info message, this will be displayed.")
+logging.warning("warning message, should be displayed.")
+
+try:
+    a = 2/0
+except ZeroDivisionError as ex:
+    logging.exception("Damn, why would you divide by zero?")
+
+############################ The log #########################
+2021-01-15 11:24:55,479:root:INFO:info message, this will be displayed.
+2021-01-15 11:24:55,479:root:WARNING:warning message, should be displayed.
+2021-01-15 11:24:55,479:root:ERROR:Damn, why would you divide by zero?
+Traceback (most recent call last):
+  File "C:/.../PythonTutorials/Logging/BasicLogging.py", line 13, in &lt;module&gt;
+    a = 2/0
+ZeroDivisionError: division by zero
+</code></pre>
+
+<p>
+  There are some important points that require attention when setting up logging configurations as above.
+  Logging module will pick up the configs only the first time and subsequent tries will be ignored.
+  This is specially dangerous for large applications where basicConfig can be used at multiple scripts.
+</p>
+
+<p>
+  Picture a scenario in which your main script defines logging configuration using basicConfig method as above. Another
+  script also defines logging configurations but for its own usage, however the two logging configurations are pointing
+  to different logging files and logging levels. Since <strong>logging</strong> module is going to pick the first config
+  that sees if you import the child module or script at the top of main script (as we usually do) then your logging
+  configuration in the main will be ignored. Now the logging is controlled inside another script.
+</p>
+
+<p>
+  To solve problems of this nature, Python's logging module has implemented <strong>logger</strong> instance
+  which can be configured independently from other loggers and we can restrict its scope and usage in our application.
+  In the Next section I am going to show you how we can use it.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Python Logging For Complex Applications</strong></h4>
+</div>
+
+<p>
+  For larger and more complex applications we need to have more flexible approach in defining our logging's. Configuring
+  a global logging instance which is sensitive to the order in which libraries are imported is error-prone and hard to
+  control. Therefore it is better to define independent logger instances at the package or script level
+  (depending on our requirements) to achieve loose coupling in our code, so we do not need to worry about what other scripts
+  are doing because they will not have effect in our logging.
+</p>
+
+<p>
+  We can create a logger instance simply by this:
+</p>
+
+<pre><code>logging.getLogger("a name for this logger")
+or if you want logging to automatically assign your script name to logger
+logging.getLogger(__name__)</code></pre>
+
+<p>
+  The name you pick for your logger can be displayed in your logging messages if you include <em>%(name)s</em> in your
+  formatting so it is useful to pick a relevant name, maybe package or script name. That is the reason why using
+  <em>__name__</em> makes sense, but you are not restricted to it so choose some name that helps to to recognize the
+  log message's origin the most.
+</p>
+
+<p>
+  To configure the new logger we need to understand <strong>Handlers</strong> and <strong>Formatters</strong> (and maybe
+  also <strong>Filters</strong>). Handlers are objects that send logging messages to defined destinations, for example
+  a <a href="https://docs.python.org/3/library/logging.handlers.html#logging.FileHandler" target="_blank"><strong>FileHandler</strong></a>
+  which is configures already will send the log records to the predefined log file, a
+  <a href="https://docs.python.org/3/library/logging.handlers.html#logging.StreamHandler" target="_blank"><strong>StreamHandler</strong></a>
+  will send the logs to a stream which is default to <em>sys.stderr</em> and you will see those messages in console.
+</p>
+
+<p>
+  Formatters are the objects which help configuring logging message structure. To instantiate a formatter instance you can
+  use logging.Formatter and passing the format you want as argument to it. Available format attributes are documented at
+  <a href="https://docs.python.org/3/library/logging.html#logrecord-attributes" target="_blank">LogRecord attributes</a>.
+  For example if you want your message to have structure like "time:logger_name:log_level:message" you can pass
+  <em>"%(asctime)s:%(name)s:%(levelname)s:%(message)s"</em> as argument to Formatter.
+</p>
+
+<p>
+  By putting theses steps together I created and configured the below logger:
+</p>
+
+<pre class="prettyprint"><code>logger = logging.getLogger(__name__)
+
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter("%(asctime)s:%(name)s:%(levelname)s:%(message)s")
+
+file_handler = logging.FileHandler("root.log", mode="w")
+file_handler.setFormatter(formatter)
+
+# if you want to have different log level for log file
+file_handler.setLevel(logging.INFO)
+
+logger.addHandler(file_handler)
+
+# we can also add multiple handler (FileHandler or StreamHandler)
+# here I add stream handler to see the logs on console
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)</code></pre>
+
+<p>
+  The above logger will pick up the name from Python's given name to script, add "time:logger_name:log_level:message"
+  format for messages,
+  create a FileHandler to write the messages to a file named "root.log" in "w" mode ("w" mode will remove file content
+  first then write to it so old logs will be cleared. To see other options look at
+  <a href="https://docs.python.org/3/library/functions.html#filemodes" target="_blank">filemode</a> documentation).
+  You can select "a" mode to append if you prefer, but then you should think about
+  log file's size because every run will write new messages into the log file so it can grow too large. In order to
+  solve this issue I will show you how to use rotating logs ath the last section of this article.
+</p>
+
+<p>
+  I have also set INFO logging level to "root.log"
+  file because I do not want to write very low level messages into the file. Pay attention that logger still has DEBUG
+  log level so other FileHandlers (if you define and add them) or StreamHandlers can still display DEBUG messages if
+  they are configured to do so. An example of that is the following <em>stream_handler</em> in the above code. If you do
+  not pass any stream into the StreamHandler it will publish the messages into sys.stderr and therefore you will see the
+  messages in the console application you are using. I did not configure logging level for stream_handler therefore it
+  will show all messages that logger allows, which in this case are DEBUG and above.
+</p>
+
+<p>
+  We should remember to add our File and Stream handlers to logger instance by <strong>addHandler</strong> method.
+  Now this logger can be used for logging messages:
+</p>
+
+<pre><code>logger.warning("================")
+logger.debug("This is a DEBUG message. Should not be in log file.")
+logger.info("This is an INFO message.")
+logger.error("This is an ERROR message.")
+logger.warning("================")
+
+# content of the log file
+2021-01-16 08:47:53,461:__main__:WARNING:================
+2021-01-16 08:47:53,461:__main__:INFO:This is an INFO message.
+2021-01-16 08:47:53,462:__main__:ERROR:This is an ERROR message.
+2021-01-16 08:47:53,462:__main__:WARNING:================</code></pre>
+
+<p>
+  Now that we know how to create a logger instance, lets start working on a multi logger scheme for a more complex
+  application. I am going to create a Python package, "Backend" in my example, and then will define a package level
+  logger for it. After this step I will import libraries from Backend module into our main script. Not only that main logging
+  messages should not be effected by those imports from Backend package, but also Backend logging should not be effected
+  by <em>main</em> script's log configuration. The design of this simple application is as below where I only included
+  parts necessary to understand logging flow.
+</p>
+
+<!-- Diagram of an Advanced App with multiple loggers -->
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/python_logging.png' %}" alt="Advanced Logging Class Diagrams">
+</div>
+
+
+<p>
+  Both <strong>User</strong> and <strong>Account</strong> classes will import Backend logger from <em>__init__</em> script
+  of Backend package and will log their messages according to that logger's configurations, log file and log level.
+  That logger sets its own logging level and logging file, "backend.log".
+  In the <em>main</em> script we import Backend classes (User and Account) and then define a logger which is specifically used
+  in <em>main</em> for this applications. Any message in <em>main</em> will be logged according to the logger defined in
+  <em>main</em> and save the messages into root.log file (configured in main logger). We can also log the "account" and
+  "user" objects in Main and they will be displayed in main logs according to
+  their <em>__repr__</em>. We can even import Backend logger in main if we want to use that one and log some messages.
+  This is due to the flexibility of our design and shows decoupling of our logging scheme from the rest of the code.
+  For the full detailed implementation please visit my github repository, linked at top left corner of this article.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Rotating Log Files</strong></h4>
+</div>
+
+<p>
+  When an application has a lot to log during its execution (which can be a long time) the log files can become very large
+  in size and we need to find a way to avoid it. We might also want to separate log files into distinct time intervals
+  for example every day being represented in one log file. Python's logging module has the options for us to configure
+  the log files that rotate based on file size or time interval that we can use for those situations.
+</p>
+
+
+<div class="article-sub-section-title">
+  <h4>
+    <strong>
+      <a href="https://docs.python.org/3/library/logging.handlers.html#logging.handlers.RotatingFileHandler" target="_blank">RotatingFileHandler</a>
+      , Rotate Based On Log File Size
+    </strong>
+  </h4>
+</div>
+<p>
+  The <strong>RotatingFileHandler</strong> in logging module allows us to create file handlers that have
+  maximum size limit. We can control log file's size based on <strong>maxBytes</strong>. Now what happens when log file
+  size is reaching the maxBytes limit depends on another option <strong>backupCount</strong>. Default value for backupCount
+  is zero. If backupCount is set to zero the log file will be overwritten from top, but if backupCount is not zero then
+  Python will create a new log file with extension being index of log file, first new log file xx.log.1 and second file
+  xx.log.2 and so on, and when old log file reaches the maxBytes limit a new log file will be created and used to write
+  new messages.
+</p>
+
+<p>
+  Beside replacing <strong>FileHandler</strong> with <strong>RotatingFileHandler</strong> and appropriate options, the
+  rest of the logger configuration can remain the same. Below I have a simple code that create such a logger and write
+  some simple messages into log files.
+</p>
+
+<pre class="prettyprint"><code>import logging
+from logging.handlers import RotatingFileHandler
+
+
+formatter = logging.Formatter("%(asctime)s:%(name)s:%(levelname)s:%(message)s")
+
+rotating_handler = RotatingFileHandler(filename="rotating.log",
+                                       mode="w",
+                                       maxBytes=250,
+                                       backupCount=1)
+rotating_handler.setFormatter(formatter)
+rotating_handler.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(rotating_handler)
+
+
+for i in range(100):
+    logger.info(f"{i}=>message")</code></pre>
+
+<p>
+  This code results in two log files because I have chosen maxBytes small enough to have the second log file required and
+  even files being overwritten because the log messages fill the log files multiple times. The first log file for me
+  has this content:
+</p>
+
+<pre><code>2021-01-17 02:46:14,818:__main__:INFO:<strong>98</strong>=>message
+2021-01-17 02:46:14,821:__main__:INFO:<strong>99</strong>=>message</code></pre>
+
+<p>
+  As you can see the file does not contain the initial messages, indicated by the index of messages 98 and 99 in this
+  example because the file has been overwritten multiple times. The second log file, "rotating.log.1" has a similar content which also shows its own initial messages have
+  been overwritten by later messages due to maxBytes choice that I made.
+</p>
+
+<pre><code>2021-01-17 02:46:14,816:__main__:INFO:94=>message
+2021-01-17 02:46:14,818:__main__:INFO:95=>message
+2021-01-17 02:46:14,818:__main__:INFO:96=>message
+2021-01-17 02:46:14,818:__main__:INFO:97=>message</code></pre>
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<div class="article-sub-section-title">
+  <h4>
+    <strong>
+      <a href="https://docs.python.org/3/library/logging.handlers.html#logging.handlers.TimedRotatingFileHandler" target="_blank">TimedRotatingFileHandler</a>
+      , Rotate Based On Time Interval
+    </strong>
+  </h4>
+</div>
+<p>
+  <strong>TimedRotatingFileHandler</strong> performs similarly to RotatingFileHandler but with time limits instead of
+  log file size limit. We can separate logs from each other based on time interval and that clearly has benefits for
+  creating periodic application reports. The options to define the time interval are "when", with options <em>S</em>
+  for seconds, <em>M</em> for minutes and so on, and "interval" which defined how many of <em>when</em> parameter to be
+  used, for example when="M" and interval 2 means rotating the logs every 2 minutes. The rest of configuration of
+  logger are the same so I created this simple code:
+</p>
+
+<pre class="prettyprint"><code>import logging
+from logging.handlers import TimedRotatingFileHandler
+import time
+
+formatter = logging.Formatter("%(asctime)s:%(name)s:%(levelname)s:%(message)s")
+
+timed_handler = TimedRotatingFileHandler(filename="timed.log",
+                                         when="S",
+                                         interval=1,
+                                         backupCount=1)
+timed_handler.setFormatter(formatter)
+timed_handler.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(timed_handler)
+
+start = now = time.time()
+ind = 0
+
+while (now - start) < 5:
+    logger.info(f"Ind: {ind}, Time passed: {round(now-start, 2)}")
+    time.sleep(0.25)
+    now = time.time()
+    ind += 1</code></pre>
+
+<p>
+  I chose to rotate the log file every 1 second and execution time 5 seconds so we can see files being overwritten
+    (when*interval*backupCount < execution_time then all log files will be
+  overwritten), and also added index to my messages
+  to make it easier to follow the messages. The messages on "timed.log" file in my case are as follows:
+</p>
+
+<pre><code>2021-01-17 03:19:45,101:__main__:INFO:Ind: 18, Time passed: 4.52
+2021-01-17 03:19:45,358:__main__:INFO:Ind: 19, Time passed: 4.78</code></pre>
+
+<br>
+<p>
+    I think this article can be helpful to start and setup logging mechanism for your application. There are many more
+    details that can be added or changed to match your expectations and logging documentation
+    (<a href="https://docs.python.org/3/howto/logging.html" target="_blank">HOWTO</a> guide) is very useful for that purpose.
+</p>
+
+{% endblock content %}
