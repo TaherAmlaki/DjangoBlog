@@ -62,16 +62,15 @@
           </div>
         </div>
 
-        <div class="card" style="float:left; border: none">
-          <div class="media mt-3" style="border: 1px solid #E1E5E8; padding: 5px">
+        <div class="card mt-3" style="float:left;border: 1px solid #E1E5E8; padding: 5px">
+          <div class="media mt-1" style="border: none">
             <img class="mt-1 mr-2 align-self-start" id="resume-about-me-img" src="{% static 'profile_app/my_new_pic.png' %}" alt="My Picture">
             <div class="media-body text-justify">
-              <h5 class="mt-0">Taher Amlaki, PhD</h5>
+              <h5 class="mt-0 mb-1">Taher Amlaki, PhD</h5>
               <small class="text-muted">Python Developer, Machine Learning Enthusiast, Test Automation Engineer</small>
-              <br>
-              {{ about_me.short_version }}
             </div>
           </div>
+          <p>{{ about_me.short_version }}</p>
         </div>
 
       </div>
