@@ -1,0 +1,619 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Python descriptors are powerful protocols that allow the programmer to control accessing and modification of attributes
+    and improve code reusability because they can be used for several attributes of a class and also between classes.
+    Descriptors are classes themselves which their instances can be used as class attributes inside owner class but at
+    the same time have their values bounded to instance of owner class. They are also used to control how an attribute
+    is queried (get), set, and deleted.
+</p>
+
+<div class="article-section-title">
+    <h4 class="text-center"><strong>The problem description</strong></h4>
+</div>
+
+<p>
+    In Python, attributes of a class or instance can be accessed from any other part of the code. Consider a scenario where
+    we want to define a Person as a class which has first name, last name, date of birth, and age. We want the names to be
+    non empty strings, date of birth to be a valid date and also not in future and not too much into the past, and age be
+    positive integer. If we define them as instance attributes (pass them as arguments in <em>__init__</em>) then we cannot
+    control their type and values. We might try to define a corresponding setter and getter like methods in which we will
+    enforce our requirements. This is similar to other object oriented programming languages like Java where we will use
+    setters and getters for private variables. In Python we do not have private attributes so we usually use <em>"_"</em>
+    in front of the name to indicate that we do not want this property to be used outside of our class, however that is
+    not enforced by Python.
+</p>
+
+
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Search for a solution</strong></h4>
+</div>
+<p>
+     Properties are Python's built-in decorators which can be used for solving the problem at hand.
+    We will implement a getter which will control the way an attribute is accessed and a setter which enforce our requirements
+    before setting a value to our attribute. A simple case is shown below:
+</p>
+
+<pre class="prettyprint"><code>class Person:
+    @property
+    def name(self):
+        return self._name
+    
+    @name.setter
+    def name(self, value):
+        if value is None or not isinstance(value, str):
+            raise ValueError(f"name expects string, got {type(value).__name__}")
+        self._name = value
+
+me = Person()
+me.name = 2
+--------------------------------
+...
+ValueError: name expects string, got int</code></pre>
+
+<p>
+    As is shown above, trying to set an invalid value to the property (<em>name</em>) will cause an exception
+    (what should happen if validation not passed is up to the requirements, usually throwing an exception is enough).
+    Therefore, using properties can satisfy our requirements.
+</p>
+
+<p>
+    There are two reasons that make this implementation not
+    desirable. First is that we need to have get and set for each attribute that we need to control and this can simply
+    consume many line of code just repeating the same pattern inside a class with many attributes.
+    We can create helper methods to validate
+    the values for similar cases but still we need to add get and set for each attribute. Second is the role of corresponding
+    underscored attributes (<em>_name</em> here). This instance attribute can be accessed from outside the class and we cannot
+    control its access.
+</p>
+
+<p>
+    A possible solution would be to take the property out of the class and create a separate class for each distinct property
+    type. With this approach we can avoid code repetition and our validations are still enforced. We only add the new
+    property instance as a class attribute. Maybe something like this:
+</p>
+
+<pre class="prettyprint"><code>class ValidName:
+    def __init__(self, name=None):
+        self._name = name
+        
+    def get(self):
+        return self._name
+    
+    def set(self, value):
+        if value is None or not isinstance(value, str):
+            raise ValueError(f"name expects string, got {type(value).__name__}")
+        self._name = value
+
+class Person:
+    name = ValidName()</code></pre>
+
+
+<p>
+    Now let's use it. We can instantiate the class (<em>Person</em> class here) and set values to our attributes. However,
+    there are couple of problems with this approach. Every time we need to set a value on attribute or get its value we
+    need to call <em>.set()</em> or <em>.get()</em> on the attribute. Although it would not be pretty, we can still use
+    it but there is another problem. If we set a value for the same name attribute on the instance, that will shatter the
+    class attribute and therefore we cannot retrieve the original attribute value. In the below code you can see that
+    assigning <em>name</em> attribute's value on the instance (<em>me</em>) will change the value and also its type to string.
+    Python at first looks up for the attribute in the instance dictionary and if it cannot find it there it will look into
+    the class attributes. As the result when we explicitly set the attribute's value on the instance, Python will save the
+    attribute with its new value into the instance dictionary and that is what we will retrieve back.
+    As the result when we call <em>me.name.get()</em> python will actually looks into the instance dictionary to retrieve
+    the attribute and because the value has changed to string we will get an AttributeError exception, something like
+    the below code snippet:
+</p>
+
+<pre><code>me = Person()
+me.name.set("Kazem")
+me.name = "Alex"  # this shatters the class attribute
+me.name.get()
+--------------------------------
+AttributeError    Traceback (most recent call last)
+&lt;ipython-input-34-0e69958d2979&gt; in &lt;module&gt;
+      2 me.name.set("Kazem")
+      3 me.name = "Alex"
+----> 4 me.name.get()
+
+AttributeError: 'str' object has no attribute 'get'</code></pre>
+
+
+<p>
+    There is yet another problem with this implementation. Since attributes are bound to the class and not the instance,
+    when we create a second instance and set the attribute value on the second instance, then the attribute value
+    on the first instance will also change and that is a serious problem because we cannot control the attribute.
+    The following code snippet shows the problem.
+</p>
+
+<pre><code>me, you = Person(), Person()
+
+me.name.set("Alex")
+you.name.set("Joe")
+me.name.get(), you.name.get()
+--------------------------------
+('Joe', 'Joe')</code></pre>
+
+<p>
+    Although the idea of taking property out of the class and put our validations and accessing logic in it was a progress
+    but it has problems which make this implementation unusable. Therefore we need something which is similar to properties
+    where the values are bound to instance, but also have code simplicity of separate class.
+</p>
+
+
+<!--========================================================================================-->
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Data and Non-Data Descriptors</strong></h4>
+</div>
+<p>
+    Descriptors are a general purpose Python protocols that can remedy all the previously mentioned problems. They are
+    implemented in a separate class and an instance of them is used as class attributes, however they have instance binding
+    behavior. From now on we call the class that uses descriptor instance as class attribute, owner_class (type of instance).
+</p>
+
+<p>
+    There are four methods that define descriptor protocol, <em>__get__</em>, <em>__set__</em>, <em>__delete__</em>, and
+    since Python 3.6 <em>__set_name__</em> methods. These methods control accessing the descriptor, modifying its value,
+    deleting, and <em>__set_name__</em> provides you with the name of the attribute in the owner_class which is very useful
+    for returning informative error messages (you might also use the name for saving descriptor value on instance directly).
+</p>
+
+<p>
+    In general, there are two types of descriptors, non-data descriptor which only implement <em>__get__</em> method (and
+    possibly <em>__set_name__</em>) and data descriptors which implement <em>__set__</em> (and maybe <em>__delete__</em>)
+    as well. Python treats them differently when it comes to accessing attribute value on the instance.
+    A simple example of non-data descriptor and data descriptor are implemented below:
+</p>
+
+<pre class="prettyprint"><code>class NonDataDescriptor:
+    def __get__(self, instance, owner_class):
+        print("NonDataDescriptor __get__ called ...")
+
+class DataDescriptor:
+    def __get__(self, instance, owner_class):
+        print("DataDescriptor __get__ called ...")
+
+    def __set__(self, instance, value):
+        pass
+
+class Person:
+    non_data_attr = NonDataDescriptor()
+    data_attr = DataDescriptor()</code></pre>
+
+<p>
+    We can create an instance of the <em>Person</em> class and try to read values for each descriptor. <em>__get__</em>
+    will be called when we try to access the attribute's value. We are basically overwriting the behavior of the <em>"."</em>
+    (dot) operator for our attributes by implementing descriptor protocol and Python is allowing us to control how the
+    attribute is used.
+</p>
+
+<pre><code>me = Person()
+me.non_data_attr, me.data_attr
+--------------------------------
+NonDataDescriptor __get__ called ...
+DataDescriptor __get__ called ...
+(None, None)
+</code></pre>
+
+<p>
+    Non-data descriptors can only control how a behavior is invoked. They are different from data descriptors when Python
+    is looking up for an attributes value. Python will first check if the attribute is data descriptor and if so then
+    it will try to get the value from descriptor (by calling <em>__get__</em> on descriptor), but if we have a non-data
+    descriptor Python will keep looking into instance dictionary. If an attribute with the same name is present in the
+    instance dictionary then Python will use that value, if not then the data descriptor value will be used. Below I create
+    an instance of <em>Person</em> class and set values for both non-data and data attributes. since non-data descriptor
+    does not have any <em>__set__</em> method defined, Python will set the attribute value for non-data descriptor directly
+    into the instance dictionary. At the end we are fetching the values and as you can see, only data descriptor <em>__get__</em>
+    is called and non-data attribute value is stored in the instance dictionary.
+</p>
+
+<pre><code>me = Person()
+me.non_data_attr = 2
+me.data_attr = 3
+
+me.non_data_attr, me.data_attr, me.__dict__
+--------------------------------
+DataDescriptor __get__ called ...
+(2, None, {'non_data_attr': 2})</code></pre>
+
+<p>
+    There is this excellent article, <a href="https://docs.python.org/3/howto/descriptor.html" target="_blank">Descriptor HowTo Guide</a>,
+    about data descriptors in Python by Raymond Hettinger, which also explains the connection between non-data descriptors
+    and functions and methods.
+</p>
+
+<!--========================================================================================-->
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Setting Name</strong></h4>
+</div>
+
+<p>
+    Before continuing with storing data into descriptor, I want to show usage of <em>__set_name__</em> method.
+    Since Python 3.6 a new method <em>__set_name__(self, owner_class, name) -> None</em> has been added to standard Python
+    descriptors protocol. This method is going to be called when descriptor is instantiated and since we are using descriptor
+    as owner_class's attribute then it will be called when owner_class is created (and not when it is instantiated). The argument
+    <em>name</em> which is passed to the method is the name of attribute in owner_class. Storing this name in the descriptor
+    is helpful to return more informative error messages with attribute name included. We can use it throughout the descriptor
+    if our requirements have specific constraint base on the name.
+</p>
+
+<pre class="prettyprint"><code>class ValidInteger:
+    def __set_name__(self, owner_class, name):
+        print(f"__set_name__ called with {owner_class} and name={name}")
+        self.name = name
+
+class Person:
+    age = ValidInteger()
+
+--------------------------------
+__set_name__ called with &lt;class '__main__.Person'&gt; and name=age</code></pre>
+
+<p>
+    As shown above, the <em>__set_name__</em> method is called when class is created and corresponding attribute's name
+    (here "age") is passed to it. We store the name on the descriptor itself for future use.
+</p>
+<!--========================================================================================-->
+
+
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Storing values bound to instance in Data Descriptor</strong></h4>
+</div>
+
+<p>
+    Data descriptors can save values bound to corresponding instance because instance object is passed as argument to
+    both <em>__get__</em> and <em>__set__</em> methods (also to <em>__delete__</em> and <em>__set_name__</em> methods).
+    However naive implementation of the storing mechanism can cause some problems.
+</p>
+
+<p>
+    We might think that it is easy to just save the value into the descriptor instance itself. This can quickly become
+    problematic because descriptors are used as class attributes meaning that all the instances of the owner_class will
+    have access to the same descriptor object. As the result the value set by one instance can be overwritten by another
+    instance.
+</p>
+
+<pre class="prettyprint"><code>class Count:
+    def __init__(self):
+        self.count = 0
+
+    def __get__(self, instance, owner_class):
+        if instance is None:
+            return self
+        self.count += 1
+        return self.count
+
+class Counter:
+    tries = Count()
+
+me, you = Counter(), Counter()
+me.tries, you.tries
+--------------------------------
+(1, 2)</code></pre>
+
+<p>
+    As shown above, assigning value to the same attribute for the second instance, <em>you</em>, has also changed its value
+    for the first instance, <em>me</em>. We need to fix this behavior. Values should be bound to instance and not
+    directly to the descriptor.
+</p>
+
+<p>
+    Another idea could be to save the value on instance directly. We should be careful with saving value on instance attribute
+    with some fixed name because if we instantiate a new instance the value of the first instance attribute will be overwritten.
+    Therefore we will try to save the value on instance but with a specific name for each attribute. We cannot use the
+    attribute name because accessing it will create infinite recursion. The best approach is to create a new name
+    from the attribute name. For example "age" attribute will be saved in instance as "_age" attribute (we already
+    have "age" as a class attribute). The class will be something like as following:
+</p>
+
+<pre class="prettyprint"><code>class ValidInteger:
+
+    def __set__(self, instance, value):
+        if not isinstance(value, int):
+            raise ValueError(f"'{self.name}' expects an integer, got {type(value).__name__} instead.")
+        setattr(instance, self._property_name, value)
+
+    def __get__(self, instance, owner_class):
+        if instance is None:
+            return self
+        return getattr(instance, self._property_name)
+
+    def __set_name__(self, owner_class, name):
+        self._property_name = f"_{name}"</code></pre>
+
+<p>
+    Notice that implementing <em>__set_name__</em> now becomes necessary, unless you explicitly require name at <em>__init__</em>
+    method of the descriptor which is also repeating the attribute name, e.g. <em>age=ValidInteger("age")</em>.
+    In any case, the name of attribute should be present for this implementation to work.
+</p>
+
+<p>
+    This approach will work correctly for most of the cases, however it has some drawbacks and at some cases it becomes
+    impossible to use. First problem is that we are adding underscored attributes to the instance while they are not present in the class
+    implementation and we prefer to avoid such implicit changes at runtime if possible. Another issue is that underscored
+    attributes are not present in the instance dictionary and their value can be directly changed without any validation and
+    this change will also change values of descriptors. As the result if the underscored attribute is changed then our
+    implementation of descriptor to control access to attribute becomes useless. We might assume that other developers
+    will not use our underscored attributes and we can even document it. But perhaps we can have a better descriptor
+    implementation to avoid such problems without relying on other developers attitude.
+</p>
+
+<p>
+    If the owner_class uses <em>__slots__</em> then this implementation becomes impossible because we cannot add any new
+    property to the instances. Slots are used to limit the amount of RAM used for creating an instance by telling Python
+    to not create a dictionary for each instance but just allocate space for limited number of attributes and the attributes
+    should be defined as slots. Therefore for the classes with slots, either underscored properties should also be added to
+    slots or we need to change our implementation of descriptors. If you are sure that the descriptor is not
+    going to be used in any class with <em>slots</em> and do not bother with underscored attributes and also know that
+    other people understand why you do not want them to use your underscored attributes then this implementation should
+    be enough.
+</p>
+
+<p>
+    If you are not sure how the descriptor will be used and want to be safe against unwanted usage of underscored attributes
+    then we need to choose another way of storing attribute values and that is to save them inside descriptor itself but
+    not directly as attribute. We can create a dictionary which will use the instance as key and will save the attribute
+    value as the corresponding value in that dictionary.
+</p>
+
+<p>
+    Although this sounds like a good idea, however it can lead to a memory leak because we are creating a new strong
+    reference to the instance by using it as a key in the descriptor dictionary. Therefore if the instance is
+    deleted outside the descriptor, the
+    corresponding object will still live in memory. A solution is to use weak reference of the instance instead of a strong
+    reference of it. Weakref module in Python provides an implementation of dictionaries which their keys have weak reference
+    to the key object. Therefore when the key (instance) is deleted the memory location will be available and the corresponding
+    item (key and value) will be automatically deleted from that dictionary. For more details about <em>weakref</em> module
+    you can check <a href="https://docs.python.org/3/library/weakref.html#weakref.WeakKeyDictionary" target="_blank">weakref - Weak reference</a>
+    documentation. The corresponding dictionary-like class is <em>WeakKeyDictionary</em> and the descriptor will
+    look like below:
+</p>
+
+<pre class="prettyprint"><code>import weakref
+
+class ValidInteger:
+    def __init__(self):
+        self.data = weakref.WeakKeyDictionary()
+
+    def __set__(self, instance, value):
+        if not isinstance(value, int):
+            raise ValueError(f"'{self.name}' expects an integer, got {type(value).__name__} instead.")
+        self.data[instance] = value
+
+    def __get__(self, instance, owner_class):
+        if instance is None:
+            return self
+        return self.data.get(instance)
+
+    def __set_name__(self, owner_class, name):
+        self.name = name
+
+    def __delete__(self, instance):
+        self.data.pop(instance, None)
+
+class Person:
+    age = ValidInteger()
+
+me, you = Person(), Person()
+me.age, you.age = 30, 20
+del me.age   # __delete__ will be called
+me.age = 50
+del me   # the weak reference to "me" will become dead and automatically removed from the WeakKeyDictionary
+</code></pre>
+
+<p>
+    This implementation will also work for classes with <em>__slots__</em> because we do not add any attribute to the
+    instance. There are still some points that we should be careful about. First one is that because we are using instance
+    as key the instance must be hashable. If we use this descriptor in a class which implements <em>__eq__</em> and not
+    <em>__hash__</em> then that class is not hashable and its instance cannot be used as a key in dictionary. Another point is
+    that the instance should be of a type that Python can create weak reference for it. Most built-in types cannot have weak
+    reference, for example <em>int</em>, <em>str</em>, and <em>tuples</em> cannot have weak references in Python. If the
+    owner_class inherits from these types (or some other built-in types) using this descriptor will throw a <em>TypeError</em>
+    exception.
+</p>
+
+<p>
+    At this stage we have an implementation of data descriptor protocol which is usable for majority of classes.
+    Most of the time the classes will be hashable and they will not inherit from built-in types. This is the implementation
+    which I will use for creating a Json Schema validator.
+</p>
+
+<p>
+    If we want to continue with creating a data descriptor implementation which also works for non-hashable classes we can
+    user id of instance as key with a normal dictionary (because <em>int</em> cannot have weak reference so we cannot use
+    WeakKeyDictionary with id). However if instance is deleted its id will still be available in the descriptor
+    so the dictionary will have a key which points to no object or a different object in memory when the original
+    object is deleted. To solve this problem then we can use <em>weakref.ref</em> for values in dictionaries,
+    we can pass instance and a callable to it. <em>weakref.ref</em> will create a weak reference to
+    instance and callable will be called when the original instance is about to be finalized (garbage collected).
+    The store mechanism will be like below:
+</p>
+
+<pre><code>self.data[id(instance)] = (weakref.ref(instance, self._remove_item), value)</code></pre>
+
+<p>
+    I will not go into the details since I will be using the descriptor implementation by <em>WeakKeyDictionary</em> and
+    I find that good enough.
+</p>
+
+
+<!--========================================================================================-->
+<div class="article-section-title">
+    <h4 class="text-center"><strong>Json Schema Validator By Data Descriptors</strong></h4>
+</div>
+
+<p>
+    A good candidate application for using data descriptors would be a Json Schema data model class. A Json Schema is
+    a specification of json data structure. Within the schema we can have multiple property defined and requirements
+    about their value can be given. I will be following <a href="https://json-schema.org/" target="_blank">Json-Schema.org</a>
+    definitions. An example of a json schema from the link is as follows:
+</p>
+
+<pre>{
+  "type": "object",
+  "properties": {
+    "street_address": { "type": "string" },
+    "city":           { "type": "string" },
+    "state":          { "type": "string" }
+  },
+  "required": ["street_address", "city", "state"]
+}</pre>
+
+<p>
+    A valid json according to the above schema will have "street_address", "city", and "state" with all being strings.
+    If we define a model class to generate or validate such json data we can use data descriptors which enforce string type
+    for the attribute when the value is set and enforcing attributes to not be <em>None</em> since they all are required.
+</p>
+
+<p>
+    There are generally object, string, Numeric, object, boolean, null, and array type of properties in a json schema definition
+    according to <a href="http://json-schema.org/understanding-json-schema/reference/type.html" target="_blank">Type-specific keywords</a>
+    documentation. Array and object types can contain any of the other types of properties. We need to think about validations since
+    the descriptors implementation will be almost identical except validations. Any property except
+    array and object types will have its own specific validations while array and object types will include other types
+    validations and some extra validations regarding number of items in the array and also how the validations will be
+    enforced for each element of array (or property in object type).
+</p>
+
+<p>
+    To avoid code repetition I decided to implement one single type descriptor which applies to string,
+    Numeric (Number and Integer), boolean, and null properties and one array type descriptor which applies to array
+    properties. I will move validations out of descriptors since validations will differ for each property type and
+    implementing them inside descriptors will reduce readability. Each descriptor will call to the validators factory
+    to get appropriate validator and when <em>__set__</em> is called the validator will validate the data and if some
+    requirement is not satisfied it will raise a <em>ValueError</em> exception. The single type descriptor for me is
+    implemented as follows:
+</p>
+
+<pre class="prettyprint"><code>class SingleType:
+    def __init__(self, schema: Dict, required: bool = False):
+        self.data = weakref.WeakKeyDictionary()
+        self.required = required
+        self._schema = schema
+        self.name = None
+        self._validator = ValidatorFactory.get_validator(self._schema, self.required)
+
+    def __set_name__(self, owner_class, name) -> None:
+        self.name = name
+        if self._validator is not None:
+            self._validator.name = name
+
+    def __set__(self, instance, value) -> None:
+        if self._validator is not None:
+            self._validator.validate(value)
+        self.data[instance] = value
+
+    def __get__(self, instance, owner_class=None) -> object:
+        if instance is None:
+            return self
+        value = self.data.get(instance)
+        if self.required and value is None and self._schema.get("type") != "null":
+            raise ValueError(f"Value of the required field '{self.name}' is not defined yet.")
+        return value
+
+    def __delete__(self, instance) -> None:
+        self.data.pop(instance, None)</code></pre>
+
+<p>
+    For each property we will implement a validator which will get the relevant sub-section of schema, extract the
+    attributes that it needs from the it, and implements a <em>validate(self, value) -> None</em> method which throws
+    a <em>ValueError</em> if validation fails. For string property in json schema I have the below implementation:
+</p>
+
+<pre class="prettyprint"><code>class ValidString:
+    def __init__(self, schema: Dict, required : bool = False):
+        self.name = None
+        self.required = required
+        self._schema = schema
+
+        self._min_length = self._schema.get("minLength")
+        self._max_lenght = self._schema.get("maxLength")
+        self._pattern = self._schema.get("pattern")
+        self._pattern = re.compile(self._pattern) if self._pattern is not None else None
+        self._enum = self._schema.get("enum")
+
+    def validate(self, value):
+        if self.required and value is None:
+            raise ValueError(f"StringField '{self.name}' value is required but got None.")
+        elif value is not None:
+            if not isinstance(value, str):
+                raise ValueError(f"{self.name} expects string but got {type(value).__name__}.")
+
+            if self._min_length is not None and len(value) < self._min_length:
+                raise ValueError(f"{self.name} leangth should be at least {self._min_length}")
+
+            if self._max_lenght is not None and self._max_lenght < len(value):
+                raise ValueError(f"{self.name} lenght should be smaller than {self._max_lenght}")
+
+            if self._pattern is not None and not self._pattern.match(value):
+                raise ValueError(f"{self.name} pattern should match '{self._pattern}'.")
+
+            if self._enum is not None and value not in self._enum:
+                raise ValueError(f"{self.name} StringType value must be in the enum list, enum={self._enum}")</code></pre>
+
+<p>
+    Creating a full Json Schema validator is a tedious task and I have implemented the rest of code in such a way that it
+    will accept Json Schema and json data if the root property is object type. I have a CreateObjectClass which will read
+    the schema and creates a class with attributes added at runtime. The attributes will be descriptor instances.
+</p>
+
+<p>
+    The process is to read all the properties in schema, and for object properties calls the same class but with
+    sub-section of schema corresponding to the object property, array or non-array (and non-object type) will create
+    an instance of descriptor with corresponding sub-schema passed as argument, and result is added to a class namespace.
+    This namespace dictionary will be used when creating the ObjectModel class.
+</p>
+
+<pre class="prettyprint"><code>model_dict = {"_min_properties": self._schema.get("minProperties"),
+              "_max_properties": self._schema.get("maxProperties"),
+              "_additional_properties": self._schema.get("additionalProperties", True)}
+
+for field_name, field_schema in self._properties.items():
+    field_type = field_schema.get("type")
+    if field_type == "object":
+        model_creator = CreateObjectClass(class_name=field_name, schema=field_schema)
+        field = model_creator.model()
+    elif field_type == "array":
+        field = ArrayType(field_schema)
+    else:
+        field = SingleType(field_schema)
+
+    model_dict[field_name] = field
+    model_dict[field_name].name = field_name
+    if field_name in self._required:
+        model_dict[field_name].required = True
+self._namespace = model_dict</code></pre>
+
+<p>
+    Finally we can call model property on <em>CreateObjectClass</em> and by using <em>type</em> class in Python we create
+    a class at runtime with using namespace which contains all the attributes.
+</p>
+
+<pre class="prettyprint"><code>@property
+def model(self) -> "ObjectModel":
+    return type(self._class_name, (ObjectModel, object), self._namespace)</code></pre>
+
+<p>
+    This model is callable with no argument required to be used for instantiating it. The rest of logic is implemented in
+    <em>ObjectModel</em> class which our model class inherits from (as well as object class). Using the implementation
+    can be as follows:
+</p>
+
+<pre class="prettyprint"><code>model_creator = CreateObjectClass(class_name="Test", schema=schema)
+model_cls = model_creator.model
+model = model_cls()
+model.validate(json_data)
+</code></pre>
+
+<p>
+    <em>model.validate</em> will raise a <em>ValueError</em> exception (maybe I could have implemented a custom
+    JsonValidationError exception here) with message showing all the failed validations (we first will go through all
+    validations and collect the exceptions and then throw one exception with appropriate message). The detailed
+    implementation of other validators, array descriptor, and <em>ObjectClass</em> are available on github (link in
+    left side summary footer).
+</p>
+
+<p>
+    Thank you for your time.
+</p>
+{% endblock content %}

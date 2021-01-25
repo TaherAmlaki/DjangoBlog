@@ -1,0 +1,330 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+  In this article I want to show you two ways that can be used for validating response
+  of a Rest Api request and then deserialize the data into Python objects. In the first method I will be using
+  <a href="https://marshmallow.readthedocs.io/en/stable/" target="_blank">Marshmallow</a> to validate and deserialize
+  json data into Python objects. In the second method I will be using
+  <a href="https://json-schema.org/" target="_blank">JSON Schema</a> library to validate the response and then my own converter
+  class to deserialize json response into a Python object with each key in json being an instant property.
+</p>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Using Marshmallow, Python's Object Serialization</strong></h4>
+</div>
+
+<p>
+  <a href="https://marshmallow.readthedocs.io/en/stable/" target="_blank">Marshmallow</a> is an Object-Relational Mapping
+  (ORM) framework-agnostic library for converting complex data types to and from Python's native objects. For example we
+  can convert (deserialize) a json response from REST APi into a native Python object, e.g. dictionaries, or Python objects
+  created by us, i.e. instances of classes, and validate the data as well. This is a very powerful tool and I will show
+  you how it can be used in some common scenarios.
+</p>
+
+<p>
+  In our first example, I will use <a href="https://swapi.dev/" target="_blank">SWAPI</a> (the star wars api) to get json data.
+    More explicitly I will call <strong>/people</strong> endpoint to
+  retrieve data about one of the characters of star wars (Luke in this case). The response will contain many details about the
+  character like name, films, height, etc. but I am interested in only name and films. I will create a Python class, Person class,
+  which I want to use to represent people. Therefore I want to call the swapi, validate the response on name and films, and
+  then create a Person class instance based on name and films.
+</p>
+
+<p>
+  Let's start with implementing our Python class that we want json data to eventually converted into, Person class. This
+  class will describe a star wars character by its name and films that that character has been in them.
+</p>
+
+<pre class="prettyprint"><code>class Person:
+    def __init__(self, name, films):
+        self.name = name
+        self.films = films
+
+    def __repr__(self):
+        return f"{self.name} was in movies {', '.join(self.films)}"
+</code></pre>
+
+<p>
+  To validate, deserialize, and serialize we need to implement a schema corresponding to our Person class which inherits
+  from <em>marshmallow.Schema</em>. In the schema we should define fields that we want to use as class attributes. Each
+  attribute should be an instance of <em>marshmallow.fields</em>, the type of the field will be defined here as well.
+</p>
+
+<p>
+  To this fields definitions we can add some validations and also define whether they are required to be present or not,
+  also whether they will be included in loading (deserialization) or in dump (serialization) and a few more settings.
+</p>
+
+<p>
+  Once we are done with the fields, we have minimum required implementation of the schema class. This implementation will
+  be used to deserialize (load) or serialize (dump) data structure (json in our case) into and from Python's native data
+  structure, i.e. Python's dictionary. This can be the desired output but in our case I want to have the input data to
+  be deserialize into <em>Person</em>'s instance. To achieve that we can define a bound method decorated by
+  <em>marshmallow.post_load</em> which will then convert the intermediary dictionary into our object. Let's have a look
+  at the schema class:
+</p>
+
+<pre class="prettyprint"><code>class PersonSchema(Schema):
+    name = fields.String(required=True)
+    films = fields.List(fields.String(), required=True,
+                        validate=validate.Length(min=1))
+
+    @post_load
+    def create_person(self, data, **kwargs):
+        return Person(**data)
+
+    class Meta:
+        unknown = EXCLUDE
+</code></pre>
+
+<p>
+  The method signature can be found at
+  <a href="https://marshmallow.readthedocs.io/en/stable/quickstart.html#deserializing-objects-loading" target="_blank">
+    Marshmallow Quickstart
+  </a>. The data argument will contain a dictionary that we can pass to our own class, Person class here, to create an
+  instance of that class.
+</p>
+
+<p>
+  There is an important point to consider and pay attention in implementing the <em>PersonSchema</em> class. The response
+  json returned by swapi has a lot more information than we need for our Person object. There are properties such as
+  <em>hair_color</em>, <em>eye_color</em> and a few more that we do not want to include in our class. By default
+  <em>marshmallow</em> will raise an exception if schema receives any property (from json data) which is not defined as
+  class attribute and field type.
+</p>
+
+<p>
+  What Marshmallow will do when faced with "unknown" can be modified by defining a nested "Meta" class inside the schema
+  class and re-define unknown attribute. This option accepts one of RAISE, EXCLUDE, and INCLUDE values. By default
+  Marshmallow uses RAISE option which will lead to ValidationError if any unknown field is present in the data. INCLUDE
+  option will automatically accept any unknown field and include them in "data" argument of "create_person" method (
+  the method which is decorated by post_load). If you want to include them in your object class, Person class, you can use
+  this option. I have chosen EXCLUDE option because I prefer to drop the properties/fields that I am not going to use
+  in Person class.
+</p>
+
+<pre class="prettyprint"><code>person_schema = PersonSchema()
+response_data = requests.get("https://swapi.dev/api/people/1").json()
+try:
+    # deserialize the /people/1 response
+    Luke = person_schema.load(response_data)
+except ValidationError as error:
+    print("ValidationError=>", error)
+    print("Valid data in ValidationError=>", error.valid_data)
+    raise error
+else:
+    print(f"Luke.name={Luke.name}")
+    # serializing the Person object
+    print("serializing=>\n", json.dumps(person_schema.dump(Luke), indent=4))
+
+======================== Result ==================
+Luke.name=Luke Skywalker
+serializing=>
+ {
+    "films": [
+        "http://swapi.dev/api/films/1/",
+        "http://swapi.dev/api/films/2/",
+        "http://swapi.dev/api/films/3/",
+        "http://swapi.dev/api/films/6/"
+    ],
+    "name": "Luke Skywalker"
+}
+</code></pre>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>NestedSchema For Complex Data Types</strong></h4>
+</div>
+<p>
+  In many situations the data will be complex, for example the json response will be nested with parent properties and
+  their children. To accommodate such data types Marshmallow allows us to use nested schemas in our fields. Let's assume
+  that we want to deserialize a data structure as below:
+</p>
+
+<pre><code>{
+    "name": "Liam Neeson",
+    "account": {
+        "AccountType": "Saving",
+        "AccountNumber": "1234"
+    }
+}</code></pre>
+
+<p>
+  This is a nested json data with a person and his account. We will create an Account class to represent account with
+  account type and number as attributes. Then we will create a Person class with attributes name and account which will
+  be an instance of Account. The classes are as shown below:
+</p>
+
+<pre class="prettyprint"><code>class Account:
+    def __init__(self, **kwargs):
+        self.acc_number = kwargs.get("acc_number")
+        self.acc_type = kwargs.get("acc_type")
+
+    def __repr__(self):
+        return f"Account(acc_number={self.acc_number}, acc_type={self.acc_type})"
+
+
+class Person:
+    def __init__(self, **kwargs):
+        self.name = kwargs.get("name")
+        self.account = kwargs.get("account")
+
+    def __repr__(self):
+        return f"Person(name={self.name}, account={self.account})"</code></pre>
+
+<p>
+    Account is the child property in our raw data therefore corresponding schema, AccountSchema will be easy to implement.
+    The class blueprint will be similar to basic schema that we saw in the first example and I have created it as below:
+</p>
+
+<pre class="prettyprint"><code>class AccountSchema(Schema):
+    acc_type = fields.String(required=True, data_key="AccountType")
+    acc_number = fields.String(required=True, data_key="AccountNumber")
+
+    @post_load
+    def create_account(self, data, **kwargs):
+        return Account(**data)</code></pre>
+
+<p>
+    Now the more exciting part, the Person schema which will contain Nested field for account. That is the only special
+    thing about the class though and the rest will be almost identical as using flat data. We just need to define account
+    attribute as <em>marshmallow.fields.Nested</em> instance with <strong>AccountSchema</strong> as nested argument.
+</p>
+
+<pre class="prettyprint"><code>class PersonSchema(Schema):
+    name = fields.String(required=True)
+    account = fields.Nested(AccountSchema)
+
+    @post_load
+    def create_person(self, data, **kwargs):
+        return Person(**data)</code></pre>
+
+<p>
+    Now loading (deserialize) and dumping (serializing) of the raw json data and Person object would be the same as before.
+    We create an instance of <strong>PersonSchema</strong> and then we can use this instance to load or dump from json
+    data or Person object.
+</p>
+
+<pre class="prettyprint"><code>person_schema = PersonSchema()
+
+try:
+    liam = person_schema.load(data)
+except ValidationError as error:
+    raise error
+else:
+    print("Liam Neeson =>", liam)
+    print(json.dumps(person_schema.dump(liam), indent=4))
+==============================================================
+Liam Neeson => Person(name=Liam Neeson, account=Account(acc_number=1234, acc_type=Saving))
+{
+    "account": {
+        "AccountNumber": "1234",
+        "AccountType": "Saving"
+    },
+    "name": "Liam Neeson"
+}</code></pre>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Second Method, Using Json Schema Validator</strong></h4>
+</div>
+
+<p>
+    For some applications using Marshmallow on a deeply nested data types with many data validations requires defining many
+    classes and can become cumbersome. However many RESTful Api applications use schemas to define the data types they will
+    employ. For these cases it can be better to use Json Schema of the Api to validate the received data. There are several
+    Python libraries that implement validating json data against a json schema and we will be using one of them. After
+    validation is done we can use our own custom data conversion class to convert the data to a Python object that we want
+    to use.
+</p>
+
+<p>
+    Let's start with validation part of our method and I am going to use
+    <a href="https://python-jsonschema.readthedocs.io/en/stable/" target="_blank"><strong>jsonschema</strong></a> library.
+</p>
+
+<pre class="prettyprint"><code># getting the schema for /people endpoint from swapi
+schema_url = "https://swapi.dev/api/people/schema"
+schema = requests.get(schema_url).json()
+
+# getting the actual data for a specific person
+luke_url = "https://swapi.dev/api/people/1"
+Luke = requests.get(luke_url).json()
+
+try:
+    validate(Luke, schema)
+except ValidationError as err:
+    raise err
+else:
+    Luke = DictToObj(Luke)
+    print(Luke.name, Luke.eye_color)
+==============================================================
+Luke Skywalker blue</code></pre>
+
+<p>
+    In the above code, at first I retrieve the json schema for <em>/people</em> endpoint and store it as json schema. Then
+    I make a request to fetch data for a specific person (here is /people/1 endpoint) and save the received data as json.
+    Inn the try-except block I use <strong>jsonschema.validate</strong> method to validate received data against the schema
+    of that endpoint. If the data is not according to schema then <em>validate</em> function will raise a
+    <strong>jsonschema.exceptions.ValidationError</strong> exception and if the schema itself is invalid then
+    <strong>jsonschema.exceptions.SchemaError</strong> will be raised. Since SWAPI is stable I did not included the except
+    block for SchemaError but it is a good habit to also handle that in your application.
+</p>
+
+
+<p>
+    The exception will contain list of all the validation errors and is
+    very helpful. If no validation error occurred then the code in <em>else</em> block will be executed.
+    In that block I am converting the validated json data (data corresponding to Luke Skywalker) into a Python object
+    corresponding to a class instance that I called <strong>DictToObj</strong> and it is responsible to convert
+    Python dictionary to an object.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Converting Dictionary To Python Object</strong></h4>
+</div>
+<p>
+    The last step would be to implement the <strong>DictToObj</strong> class to convert validated json data
+    into a Python object that will have all the keys in the json data as instance attributes. The class is implemented to
+    recursively add all the keys and nested keys to the object as attributes and a set the values of those keys as values of
+    the attributes.
+</p>
+
+<pre class="prettyprint"><code>class DictToObj:
+    def __init__(self, dictionary: Dict):
+        self._dict = dictionary
+        for key, value in dictionary.items():
+            if isinstance(value, (list, tuple)):
+                setattr(self, key, [DictToObj(x) if isinstance(x, dict) else x for x in value])
+            else:
+                setattr(self, key, DictToObj(value) if isinstance(value, dict) else value)
+
+    def items(self):
+        for item_name, item_data in self._dict.items():
+            yield item_name, DictToObj(item_data)
+
+    def __repr__(self):
+        return json.dumps(self._dict, ensure_ascii=True, indent=4)</code></pre>
+
+<p>
+    Now the corresponding keys in initial json are attributes and can be accessed via "." (dot) operator, for example
+    "Luke.name" will access name key of the initial json data. This makes working with this object easier and more readable.
+    Although that this object is not a dictionary anymore it would be nice if we can iterate through its keys and values
+    just like we do with dictionaries. To satisfy that I have added <strong>items</strong> method as a utility method.
+    By adding it we will be able to iterate through this object the same way as we do for dictionaries. Finally
+    <em>__repr__</em> is added to return prettified json dump in order to have more readable logging messages if we log
+    the object.
+</p>
+
+<p>
+    I hope that the two methods that I showed you to be helpful in your applications. Please leave a comment or contact me
+    if you have any feedback about the article. Thanks.
+</p>
+
+{% endblock content %}
