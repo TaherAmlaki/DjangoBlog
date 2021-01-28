@@ -1,0 +1,526 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Mongo DB is an exciting database solution which can be used in vast number of areas, for a website, a desktop app,
+    a mobile app, or even for data analysis. We need to be able
+    to do all these <a href="https://en.wikipedia.org/wiki/Create,_read,_update_and_delete" target="_blank"><strong>CRUD</strong></a>
+    operations (Create, Read, Update, and Delete data from database) quickly, in an efficient way, and also scalable for
+    large data. MongoDB is a popular solution for data storage which does satisfies all above requirements.
+</p>
+
+<p>
+    MongoDB is a NoSQL database (documentation can be found <a href="https://docs.mongodb.com/manual/" target="_blank">here</a>) and it
+    is build to store humongous amount of data. MnogoDB runs as a service which gives you the option to have multiple databases
+    inside that service, and each database can contain multiple collections. Each collection can hold documents which is
+    rough equivalent of rows in relational databases. However, each document is represented by a
+    <a href="https://en.wikipedia.org/wiki/JSON" target="_blank">JSON</a> object which is similar to Python's dictionary
+    and more importantly documents do not have to follow a predefined structure or schema as opposed to tables in
+    relational databases (documents are actually stored as
+    <a href="https://en.wikipedia.org/wiki/BSON" target="_blank">BSON</a> objects (Binary JSON) for storage efficiency).
+    Each document is consist of key-value pairs and maybe nested data, again similar to the dictionaries in Python.
+    The nesting can be very useful for fetching related data in the same document for complex data as opposed to relational
+    databases where we need to first join different tables and then return the data.
+</p>
+
+<p>
+    That is a general approach in using MongoDB database, we do not need to create multiple collections and then join them
+    when we query. In cases that data repetition is useful we can just embed related data into each document. Therefore
+    that is one of the main decisions that should be taken by developer during designing the application, to embed document
+    or not to be. For example imagine we have a bookstore application that stores information about books and authors. Now
+    we want to display this information to users. If every time that we show information about a book we also show
+    information about authors then embedding author data in books documents would be more efficient in MongoDB.
+
+</p>
+<br>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>PyMongo, Starting With MongoDB in Python</strong></h4>
+</div>
+
+<p>
+    To start we need to create a MongoDB database. We can do it by installing mondogb in our local machine, the free community
+    version is available <a href="https://www.mongodb.com/try/download/community" target="_blank">here</a>. However, MongoDB
+    company also offers a great Atlas cloud solution for developers where all the system administrations is managed by
+    MongoDB Atlas and we don't need to install anything. To use the cloud solution you can just register
+    <a href="https://www.mongodb.com/try" target="_blank">here</a> and create a cluster in which you can add new database
+    and collections. You will get a connection string when you have created your database and we will use that string,
+    adding our password to it, to connect and use our cloud database from Python. To be able to work with mongodb you need
+    <a href="https://pypi.org/project/pymongo/" target="_blank">pymongo</a> package and to work with Atlas mongodb you
+    additionally need <a href="https://pypi.org/project/dnspython/" target="_blank">dnspython</a>.
+</p>
+
+<p>
+    Usually we want to keep our credentials secure and out of the public sight. One way to do so in Python is using
+    <a href="https://pypi.org/project/python-dotenv/" target="_blank">python-dotenv</a> package to load <strong>.env</strong>
+    file in which you can store your sensitive parameters, for example MONGODB_PASSWORD='mySecurePassword'. Also add
+    .env to your <strong>.gitignore</strong> file so you would not accidentally push your sensitive data to a public
+    Git repository. I created a databse on MongoDB Atlas and a collection named "covid"
+    in it. I am going to use <a href="https://covid19api.com/" target="_blank">covid19api</a> to fill the collection
+    and that is why I named the collection covid. I have the below code to connect to my in cloud database:
+</p>
+
+<pre class="prettyprint"><code>from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
+
+load_dotenv("./.env")
+conn_str = \
+    "mongodb+srv://{username}:{password}@{clustername}.ekhk0.mongodb.net/" \
+    "{dbname}?retryWrites=true&w=majority"
+cluster = MongoClient(conn_str.format(username=os.getenv("MONGODB_USERNAME"),
+                                      password=os.getenv("MONGODB_PASSWORD"),
+                                      clustername=os.getenv("MONGODB_CLUSTER_NAME"),
+                                      dbname=os.getenv("MONGODB_NAME")))
+
+db = cluster[os.getenv("MONGODB_NAME")]  # getting the database
+covid_collection = db.covid  # getting the collection</code></pre>
+
+<p>
+    If you don't get any exception executing the above code it means that you are able to connect to you database. Now we
+    can start populating the database and later we will read/fetch data from the collection, modify the data and update
+    it into the collection. To get some data I use covid-19 data from
+    <a href="https://covid19api.com/" target="_blank">covid19api</a> by a GET request done via <strong>requests</strong>
+    package and converting the response to json. There are many API's available in the covid19api server and I have chosen
+    to use <strong>/summary</strong> endpoint to get covid-19 data for all countries at once. We also need to add
+    X-Access-Token for /summary endpoint which is given in the documentation. I will get Global statistics and a list
+    consist of the same statistics for each country (190 countries). I will store Global data first and then all
+    countries data at once (bulk insert) to show you how inserting new data is performed with
+    <a href="https://pymongo.readthedocs.io/en/stable/" target="_blank">PyMongo</a>. In short you can do this:
+</p>
+
+<pre><code># To add a single document
+collection.insert_one(dictionary)
+
+# To add multiple documents at once
+collection.insert_many(list of dictionaries)</code></pre>
+
+<p>
+    I want to restructure the data I get back from covid19api/summary to have all the numerical data be under a separate
+    document with ket "data". I will also only add some key-value pairs that I think are descriptive and remove the rest.
+    I also put all of these steps into a function because I do not want to call the /summary endpoint if I have already
+    stored data into the collection therefore by having it as a function I can call it after checking collection size.
+    The function is as follows:
+</p>
+
+
+<pre class="prettyprint"><code>from typing import Dict
+import requests
+
+def get_and_save_countries_data():
+    try:
+        headers = {"X-Access-Token": "5cf9dfd5-3449-485e-b5ae-70a60e997864"}
+        summary: Dict = requests.get("https://api.covid19api.com/summary",
+                                     headers=headers).json()
+    except Exception as ex:
+        # if you want to retry or give some specific message
+        raise ex
+
+    global_data = summary.get("Global")
+    countries_data = summary.get("Countries")
+    global_data.pop("ID")
+    save_to_db_global = {
+        "Country": "Global",
+        "details": global_data
+    }
+
+    # how to add a single document (a dictionary in Python) to the collection
+    covid_collection.insert_one(save_to_db_global)
+
+    # I loop through the countries list because I want to restructure data
+    save_to_db_data = []
+    data_keys = ["NewConfirmed", "TotalConfirmed",
+                 "NewDeaths", "TotalDeaths",
+                 "NewRecovered", "TotalRecovered",
+                 "Date"]
+    for country in countries_data:
+        doc = {
+            "Country": country["Country"],
+            "CountryCode": country["CountryCode"],
+            "data": {k: v for k, v in country.items() if k in data_keys}
+        }
+        save_to_db_data.append(doc)
+
+    # how to add multiple documents (list of dictionaries) to the collection
+    covid_collection.insert_many(save_to_db_data)
+
+
+# If the database is empty then get the data and save it to the collection
+if covid_collection.count_documents({}) == 0:
+    get_and_save_countries_data()</code></pre>
+
+<p>
+    Documents in the Atlas cloud database should be visible after running the above function. You can filter the document
+    using direct search. In Python by using Pymongo functions <strong>find_one</strong> or <strong>find</strong>. The
+    find_one method returns the first document found that matches the criteria as a dictionary. The <em>find</em>
+    method will return an iterable and will contain all the documents that match the query. The query should be in form
+    of a dictionary itself with the search key as key and value we are looking for as value. We can have multiple key-value
+    pairs in the dictionary and filter will include all of them. A search of Bhutan country in my covid database will
+    result in the below result:
+</p>
+
+<!-- Picture of Search Result on Atlas for Bhutan Country -->
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/mongodb-atlas-BT.png' %}" alt="MongoDB Document Atlas Example">
+</div>
+
+<p>
+    It is interesting that how low the death count for Bhutan is, I don't know whether that is due to Bhutan's restricted
+    visa policy or because they are assumed to be happier that the rest of us or both (assuming that the data is reliable).
+</p>
+
+<p>
+    We can find the similar result from Python script (for The Netherlands in this example):
+</p>
+
+<pre><code>nl_data = covid_collection.find_one({"CountryCode": "NL"})</code></pre>
+
+<p>
+    To display this result in a pretty format we might convert it to json, using <em>json.dumps</em> method. However,
+    there is one small problem with "_id" value because the value is instance of <strong>bson.ObjectId</strong> and
+    json.dumps does not know how to convert that to string (technically it is not JSON serializable). We can either remove
+    "_id" key from "nl_data" dictionary before converting it to json or create our own <strong>JSONEncoder</strong> class
+    and pass it as <strong>cls</strong> keyword to json.dumps method. To be complete I will choose to include "_id" as well.
+    I found a good solution to this problem on stackoverflow under the
+    <a href="https://stackoverflow.com/a/16586277/8564495" target="_blank">TypeError: ObjectId('') is not JSON serializable</a>
+    question:
+</p>
+
+<pre class="prettyprint"><code>class MongoObjectJsonEncoder(json.JSONEncoder):
+    """
+    We need to use a extended JsonEncoder that can handle
+    ObjectId coming from mongodb in each document.
+    """
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        return super().default(o)
+
+
+print("NL Covid-19 data:\n")
+print(json.dumps(nl_data, indent=4, cls=MongoObjectJsonEncoder))</code></pre>
+
+<p>
+    The result is similar to Bhutan's case and I think that you can see it for yourself if you execute the code. Deleting
+    similar to insert has delete_one and delete methods which can be used for deleting single document or bulk of documents.
+</p>
+
+<pre><code>covid_collection.delete_one({"CountryCode": "NL"})</code></pre>
+<br>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>MongoDB Object-Document Mapping (ODM) With MongoEngine</strong></h4>
+</div>
+
+<p>
+    Working with PyMongo is usually just to learn about MongoDB database. For more professional and complex applications we do
+    not want to write queries or use low level PyMongo functions. In an Object-Oriented code our data
+    (country in this article)
+    will be represented by a class. We would want to be able to convert our documents from database directly to Python
+    objects and vice versa to directly save an instance object to database. In a relational databases we use
+    Object-Relational Mapping (ORM) tools to do the conversion for us like
+    <a href="https://www.sqlalchemy.org/" target="_blank">SQLAlchemy</a> in Python. MongoDB database by design is
+    schema-less and does not require any specific structure for documents. However we might want to control the data structure
+    from our Python application. In that case we need to use Object-Document Mapping (ODM) tools and the most popular
+    library for Python is <a href="http://docs.mongoengine.org/" target="_blank">MongoEngine</a>.
+</p>
+
+<p>
+    Here we face three choices for structuring our documents. First approach is to not have any restriction on the data
+    stored in mongodb database. Because our data basically can have any key-value pairs in it we cannot assume any
+    specific key to be present for a document. Implementing classes to represent documents need extra caution to handle
+    not-present keys and also extra items that might be present. Since data in database has no structure creating classes
+    to organize the data is also not needed and you can decide to use PyMongo for all interactions with database
+    and CRUD operations.
+</p>
+
+<p>
+    On the other extreme we can use MongoEngine to specify exactly which keys/fields should be present in the data.
+    We can create classes which inherit from <strong>mongoengine.Document</strong> and add required fields as class
+    attributes. The benefit of using MongoDB would be its scalability, speed, and the fact that you can embed data into
+    a document. Benefit for your application is that you can control data structure inside your application and are not
+    constrained by predefined database schema. Therefore combining MongoDB with Python application equipped with ODM
+    brings speed, scalability, and control to your application.
+</p>
+
+<p>
+    The remaining possibility is to combine the two extremes. We will impose some constrains over the data structure in
+    documents but also allows some freedom for extra fields to be added at runtime to documents. We can still create
+    classes that inherit from <strong>mongoengine.DynamicDocument</strong> to represent required structure over data and
+    also allow extra fields or tags to be added as well.
+</p>
+
+<p>
+    In the rest of this article I will first start with strict approach to define a full schema for documents and
+    in the section after that I will introduce dynamic schema approach.
+</p>
+
+
+<div class="article-sub-section-title">
+  <h4>
+    <strong>
+      Document Schema With MongoEngine
+    </strong>
+  </h4>
+</div>
+
+<p>
+    As discussed in the previous section, I like to organize my data to have Country and CountryCode as plain items in root
+    level and data as a nested document. In order to capture this data structure in Object-Oriented manner I will create two
+    classes, one for data (the nested document) and another one for country. Country class will have Country,
+    CountryCode and data as class
+    attributes. Data will be a nested document which is represented as <strong>EmbeddedDocumentField</strong> in
+    MongoEngine. I will implement the corresponding class for data first because we need to use this class in our parent
+    country class. I will also add <em>to_dict</em> method to help me with displaying the document objects. The class
+    structure is similar to what we would have if we were using a relational database and that is one of the benefit
+    of using ODM.
+</p>
+
+
+<pre class="prettyprint"><code>class CountryData(mongoengine.EmbeddedDocument):
+    NewConfirmed = mongoengine.IntField(required=True, db_field="NewConfirmed")
+    TotalConfirmed = mongoengine.IntField(required=True, db_field="TotalConfirmed")
+    NewDeaths = mongoengine.IntField(required=True, db_field="NewDeaths")
+    TotalDeaths = mongoengine.IntField(required=True, db_field="TotalDeaths")
+    NewRecovered = mongoengine.IntField(required=True, db_field="NewRecovered")
+    TotalRecovered = mongoengine.IntField(required=True, db_field="TotalRecovered")
+    Date = mongoengine.DateTimeField(default=datetime.now, db_field="Date")
+
+    meta = {
+        "db_alias": "core",
+        "collection": "covid"
+    }
+
+    def to_dict(self):
+        return {
+            "NewConfirmed": self.NewConfirmed,
+            "TotalConfirmed": self.TotalConfirmed,
+            "NewDeaths": self.NewDeaths,
+            "TotalDeaths": self.TotalDeaths,
+            "NewRecovered": self.NewRecovered,
+            "TotalRecovered": self.TotalRecovered,
+            "Date": self.Date.strftime("%Y-%m-%d")
+        }</code></pre>
+
+<p>
+    The <strong>meta</strong> attributes allows us to define an alias for the specific database connection which we
+    are going to use. We define it because there can be multiple instances of connections to database in the same
+    application. In a small program like ours that is not necessary but it is good to practice it. We also refer to
+    the collection which this class will relate to and it is also not necessary if you are not switching between
+    collections in the same database connection but good for readability of the code.
+</p>
+
+
+<!-- here, talk about Country class and find methods -->
+<p>
+    CountryReport will be the class corresponding to the document as it is saved in the database representing each
+    country's document. We need to somehow tell this class about CountryData class and assemble for each country the
+    data document inside the country document. This can be achieved via
+    <strong>EmbeddedDocumentField</strong> and passing CountryData class as argument to it. I also have implemented two
+    "find_by_x" methods in order to remove explicit interaction with database from the rest of the application. Theses
+    two find methods are implemented as class methods therefore can be directly used in other parts of the applications
+    without instantiating the class, just directly search what you want but the good thing is that the result will be
+    a Python object not a plain dictionary. We
+    will implement find_by_country and find_by_country_code which correspond to two most useful searching queries. To
+    pretty display the document I have also implemented to_json() method. The entire class is presented below:
+</p>
+
+
+<pre class="prettyprint"><code>class CountryReport(mongoengine.Document):
+    Country = mongoengine.StringField(required=True)
+    CountryCode = mongoengine.StringField(required=True)
+
+    data = mongoengine.EmbeddedDocumentField(CountryData)
+
+    meta = {
+        "db_alias": "core",
+        "collection": "covid"
+    }
+
+    @classmethod
+    def find_by_country(cls, country):
+        return cls.objects().filter(Country=country).first()
+
+    @classmethod
+    def find_by_country_code(cls, country_code):
+        return cls.objects().filter(CountryCode=country_code).first()
+
+    def to_json(self):
+        data = {
+            "Country": self.Country,
+            "CountryCode": self.CountryCode,
+            "details": self.details.to_dict() if self.details is not None else None
+        }
+        return json.dumps(data, indent=4, ensure_ascii=True, cls=MongoObjectJsonEncoder)</code></pre>
+
+<p>
+    Now is the time to use the classes we implemented and create our main script. We will start with initializing our
+    connection to database and register it to MongoEngine. Connection string is the same as before and we load environment
+    arguments for database connection from .env file. When we register this new connection to mongoengine we also mention
+    alias for that connection because there can be multiple connections simultaneously and we want to keep them separate.
+    In this application we only have one connection to database but still it is useful to define alias. This alias
+    should be the same as the "db_alias" we defined in meta attribute of our document object class.
+</p>
+
+<pre class="prettyprint"><code>def mongo_init():
+    load_dotenv("../.env")
+    conn_str = \
+        "mongodb+srv://{username}:{password}@{clustername}.ekhk0.mongodb.net/" \
+        "{dbname}?retryWrites=true&w=majority" \
+            .format(username=os.getenv("MONGODB_USERNAME"),
+                    password=os.getenv("MONGODB_PASSWORD"),
+                    clustername=os.getenv("MONGODB_CLUSTER_NAME"),
+                    dbname=os.getenv("MONGODB_NAME"))
+    mongoengine.register_connection(alias="core",
+                                    host=conn_str,
+                                    db=os.getenv("MONGODB_NAME"))</code></pre>
+
+<p>
+    After creating connection function we can start with retrieving data as we did in the previous section. I am not going
+    to repeat those parts in the code snippet below. The only difference is in the for loop over countries list. In the previous
+    section we looped over raw data list and append each country data (after restructuring the data) as a dictionary
+    to "save_to_db_data" list. Here we will do a similar process but we will convert data dictionary to data object,
+    instance of CountryData EmbeddedDocument. Next change happens before appending to the list we will convert the
+    dictionary into document-object instance (CountryData instance). These are the objects that MongoEngine knows how to
+    save to database because they are instances of mongoengine.Document. After the loop we will insert all of the
+    document-objects list to database in bulk, equivalent of insert_many in PyMongo for list of dictionaries.
+</p>
+
+
+<pre class="prettyprint"><code>for country in countries_data:
+    data = CountryData(**{k: v for k, v in country.items() if k in details_keys})
+    doc = {
+        "Country": country["Country"],
+        "CountryCode": country["CountryCode"],
+        "data": data
+    }
+    save_to_db_data.append(CountryReport(**doc))
+
+CountryReport.objects.insert(save_to_db_data, load_bulk=False)</code></pre>
+
+
+<p>
+    By executing the above steps the collection should be filled with data about Covid-19 reports for each country. Now
+    is the time to check reading, updating or even deleting our documents. First finding the object is easy because we
+    implemented find methods in class level so we can just use CountryReport.find_by_country to find the
+    document which corresponds to that country and the result will automatically be a Python object
+    (CountryReport instance) due to the magic of ODM with MongoEngine.
+</p>
+
+<p>
+    This object just like any other Python object has some attributes and we can modify them like changing NewDeaths for
+    the document-object. The benefit of using ODM now is shown again since we can directly save this modified object to database
+    and MongoEngine will automatically update the corresponding document in the collection. We can then fetch the data
+    again and see the changed property for ourselves. Deleting is also very easy just have to call <strong>delete</strong>
+    on the same object and it will be removed from collection by MongoEngine. I have demonstrated these operations in the
+    following code snippet.
+</p>
+
+
+<pre class="prettyprint"><code>bt_data: CountryReport = CountryReport.find_by_country("Bhutan")
+print(bt_data.to_json())
+
+bt_data.data.NewDeaths = 999
+bt_data.save()
+
+bt_data_changed: CountryReport = CountryReport.find_by_country("Bhutan")
+print("Bhutan NewDeaths after change:", bt_data.data.NewDeaths)
+
+bt_data_changed.delete()
+print("Bhutan after delete=>", CountryReport.find_by_country("Bhutan"))
+===================================================
+{
+    "Country": "Bhutan",
+    "CountryCode": "BT",
+    "data": {
+        "NewConfirmed": 1,
+        "TotalConfirmed": 856,
+        "NewDeaths": 999,
+        "TotalDeaths": 1,
+        "NewRecovered": 9,
+        "TotalRecovered": 734,
+        "Date": "2021-01-26T03:19:40.832Z"
+    }
+}
+Bhutan NewDeaths after change: 999
+Bhutan after delete=> None</code></pre>
+
+
+<!------------------- Dynamic Schema ------------------->
+<div class="article-sub-section-title">
+  <h4>
+    <strong>
+      Dynamic Document Schema With MongoEngine
+    </strong>
+  </h4>
+</div>
+
+<p>
+    We now understand how MongoDB works and how to use low level tools to interact with it in Python using PyMongo or
+    how to restrict structure of our documents and have higher level interaction with database using MongoEngine's ODM
+    library. What I presented in the previous section was similar to ORM models for relational databases where we define
+    a schema for database in our application. However the difference is that MongoDB database allows us to be more
+    flexible in structure of our data while relational database do not and we might want to use this flexibility whilst
+    also keeping our data organized to some degree. This means that we want our documents to be according to
+    a schema that we define in our application (having some required fields and so on) but we are also open to accept
+    and save other fields at the runtime.
+</p>
+
+<p>
+    If so, then MongoEngine allows us to inherit from <strong>DynamicDocument</strong> instead of Document and that is the
+    only change which is required in our document-object class (CountryReport specifically in this article). I also removed
+    my custom to_json method from CountryReport class because dynamically added fields were not considered implementing
+    it. Instead I will use MongoEngine DynamicDocument to_json method to capture all fields including the ones added at
+    runtime. Only _id and Date fields will be affected but that is ok. Below are the change to class definition and
+    after that code snippet to demonstrate how to add new properties to the document and save it.
+</p>
+
+<pre><code>class CountryReport(mongoengine.DynamicDocument):
+    ...</code></pre>
+
+
+<pre class="prettyprint"><code>bt_data: CountryReport = CountryReport.find_by_country("Bhutan")
+
+# adding a new field 'status' to the document, not present in the schema
+setattr(bt_data, "status", "good")
+bt_data.save()
+
+bt_data_changed: CountryReport = CountryReport.find_by_country("Bhutan")
+print(bt_data_changed.to_json(indent=4))
+==============================================
+{
+    "_id": {
+        "$oid": "6010ee50ba9725d091710bc3"
+    },
+    "Country": "Bhutan",
+    "CountryCode": "BT",
+    "data": {
+        "NewConfirmed": 0,
+        "TotalConfirmed": 856,
+        "NewDeaths": 0,
+        "TotalDeaths": 1,
+        "NewRecovered": 0,
+        "TotalRecovered": 734,
+        "Date": {
+            "$date": 1611721540826
+        }
+    },
+    "status": "good"
+}</code></pre>
+
+<p>
+    As you can see above, the new field "status" with value "good" is added to the document and saved to database. This
+    behavior can be what you want your application to have but dynamic schema will need more attention since you can have
+    documents in your database which do not have the data structure you would expect. However the minimal requirements
+    that are defined in your document-object class will always be satisfied and that can be enough.
+</p>
+
+<p>
+    I hope that this article helps you to start using MongoDB in Python and thank you for your time.
+</p>
+
+<br>
+{% endblock content %}
