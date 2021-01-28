@@ -64,6 +64,7 @@ class SkillsModel(models.Model):
     area = models.CharField(max_length=100)
     experiences = models.TextField()
     level = models.PositiveSmallIntegerField()
+    link = models.CharField(max_length=100, default=None, null=True, blank=True)
 
     class Meta:
         ordering = ['-level']

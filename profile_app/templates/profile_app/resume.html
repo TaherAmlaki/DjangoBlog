@@ -29,7 +29,12 @@
               <div class="card-body">
                 {% for skill in skills %}
                 <div class="row" style="padding:10px">
+                  {% if skill.link %}
+                  <a href="{% url 'blog-home' %}{{ skill.link }}"><h6><strong>{{ skill.title }}</strong></h6></a>
+                  {% else %}
                   <h6><strong>{{ skill.title }}</strong></h6>
+                  {% endif %}
+
                   <ul class="text-left unstyled">
                     {% for experience in skill.experiences %}
                     <li>{{ experience }}</li>
@@ -77,6 +82,7 @@
         </div>
       </div>
 
+      <!------------------ Experiences ------------------>
       <div class="col-md-8 col-sm-12 bg-ligh">
         <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
           <div class="card">
@@ -119,6 +125,7 @@
           </div>
         </div>
 
+        <!------------------ Projects ------------------>
         <div class="row text-center justify-content-center" style="padding:0px 5px 5px 5px;">
           <div class="card">
             <div class="card-header">
