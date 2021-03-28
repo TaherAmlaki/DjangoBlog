@@ -1,0 +1,388 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Most of web or mobile applications implement a user login system to store user data and guard them. The application
+    can also change its appearances and content based on the type of user. In this article I will create a web applications
+    with Flask backend and implement a user login system for it. The user data required are username and a password. Adding
+    an email field as well would be very easy. The user data is stored in a MongoDB database under user collection. MongoDB
+    can also be used to store application data for other parts of the Flask application.
+</p>
+
+<p>
+    A production like application will likely run on a separate container and to resemble production environment we will
+    use Docker. We will create two Docker containers, one for Flask application and the other one for MongoDB database.
+    We also use Model-Template-View design pattern for our flask application with Blueprints, Flask-MongoEngine document and
+    Flask-Login UserMixin and a User model.
+</p>
+
+<br>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Application Structure: Data Models, Views, and Forms</strong></h4>
+</div>
+
+<p>
+  Let's first have a look at the high level structure of our application.
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/login_system_flask_mongodb_docker.png' %}" alt="Flask MongoDB User Login">
+</div>
+
+<p>
+  As shown above the main application can contain multiple smaller applications in itself, and user login app will be
+  the focus of this article. Entire application and its environment and external dependencies (MongoDB database for
+  example) will be put in Docker containers and share a single Docker network where they can communicate with each other.
+</p>
+
+<p>
+    We will focus on user login app later in this article. We are going to use MongoDB database in this project, which is a
+    document based (NoSQL) database, therefore we can save any JSON formatted data into it. There are no tables but collections
+    in MongoDB database and no schema is enforced by MongoDB. We need to create a collection for user login data and we
+    need each document for user login to contain "username", and "password" (we can simply add more required properties
+    such as "email") and because we are using MongoDB, the constrains must be implemented in our Flask application.
+</p>
+
+<p>
+    It is desirable to avoid using low level database queries since we need to keep their usage consistent throughout our
+    applications and this pattern will also make our application depend on specific database too much.
+    To achieve required schema and avoid using low level interactions with database it is common to user a data
+    model class and Object-Document Mapping (ODM). With using ODM pattern we can convert Python objects (data model
+    instances) to and from database. We will have a closer look at it in later section, but for now, we need to use a
+    library to handle document mappings for MongoDB and MongoEngine is the most popular Python package that is used for
+    that purpose. We just have to
+    create a User class in which we inherit from MongoEngine document class and lay out the user document schema.
+    The resulted class knows how to query and insert/update/delete corresponding user instance into/from MongoDB database,
+    therefore we will not directly interact with database from our application and can continue working with Python
+    objects instead of JSON data or MongoDB query objects.
+</p>
+
+<br>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4>
+    <strong>
+      Setting Up The Docker Environment
+    </strong>
+  </h4>
+</div>
+
+<p>
+  To setup our environment we can use docker-compose to create a docker-network with two docker containers for Flask
+  application and MongoDB database. The reason for separating them is that MongoDB database is not part of the Flask
+  application therefore it makes sense to keep it separate. Other applications can also use the same database if they
+  have the right credentials. There is also the requirement that our database should be persistent. If our Flask application
+  is shut down or even removed for any reason the database should still be untouched. Deleting the database should be
+  an separate decision.
+</p>
+
+<p>
+    The docker-compose will create a common network where containers can communicate with each other in it. With putting
+    our application in containers we shield them from random or unwanted external access. By default our Flask application
+    and MongoDB database cannot be reached from outside the Docker network. We need to expose Flask application on its
+    default port 5000 (we can change this port to any other port by passing the port as argument to Flask application
+    instance) to host's
+    port 5000 (or any other port we prefer). Therefore we added this port under flask application service in our
+    docker-compose file. We do not need the database to be exposed to
+    external host's applications therefore we did not expose any port in MongoDB service. As the result MongoDB
+    database can only be reached inside
+    the docker network on default port 27017 (can change the port in docker-compose yaml file) which in this application
+    is only the Flask application.
+</p>
+
+<p>
+    Let's have a look at the file structure of project and docker files (web application name is ShoppingListApp). I have
+    "env" directory with one ".env" file for database and one for Flask application in order to store sensitive data
+    such as username and password of database user and Flask application secret key.
+</p>
+
+<p>
+  Another directory contains entire Flask application with user login application inside and any other possible application
+  as well. This application will run in its own docker container and therefore a "Dockerfile" is created for it inside the
+  directory. Before looking into the file I shall address the lack of directory or dockerfile for MongoDb.
+</p>
+
+<p>
+    A docker container is built based on an docker image which contains information or instructions about how to create
+    the container. For the image we can use already available images from public repositories, most famous one is
+    <a href="https://hub.docker.com/" target="_blank">docker-hub</a>, or from private repositories. We can pull these images
+    and add our own customizations inside Dockerfile. For this application we use public images for Python and MongoDB
+    from docker-hub. To use a public
+    image we can simply add it to our Dockerfile, for example "FROM python:3" will pull Python version 3 image from
+    docker-hub. We can do the same for MongoDB however I do not need any extra configuration over MongoDB image. For
+    that reason we can put image on docker-compose file and not create any custom Dockerfile for MongoDB.
+    The files structure and docker files are shown below:
+</p>
+
+<div class="container text-center mb-4">
+  <img class="img-fluid" src="{% static 'blog/images/Flask_MongoDB_Docker_Containers.png' %}" alt="Flask MongoDB Folder Structure">
+</div>
+
+<p>
+  There are a few points to take into consideration when creating dockerfile and docker-compose file. First I like to have
+  the same files structure as in my local machine therefore when I add instruction for copying files inside dockerfile I
+  give the same name for the folder as my local project name:
+</p>
+<pre><code>COPY . ./ShoppingListApp</code></pre>
+
+<p>
+  This might be something that you want to do or not, if not then should pay attention to your imports since the root folder
+  that your application is in will be different in your docker container and is defined by "WORKDIR" in your dockerfile.
+</p>
+
+<p>
+  In docker-compose.yaml file we have two services one for MongoDB database where we use public image from docker-hub as
+  instructed in
+</p>
+<pre><code>services:
+  mongodb:
+    image: 'mongo'</code></pre>
+<p>
+  but for our Flask application we will use our dockerfile and therefore have "build" option and not image. Both services
+  will have their own "env" file for defining sensitive parameters where the env folder should not be committed to git
+  repository but should be present in docker container.
+</p>
+
+<p>
+  Important part of docker-compose file is sections about volumes and bind amount.
+  <a href="https://docs.docker.com/storage/volumes/" target="_blank">Docker volumes</a> are a mechanism of storing data
+  of docker container inside or outside the container. The first volume is indicated at mongo service,
+</p>
+<pre><code>mongodb:
+    image: 'mongo'
+    volumes:
+      - data:/data/db</code></pre>
+<p>
+  This is a named volume and its scope is limited to one single docker-compose file. Docker will create this volume if it
+  does not exist which would be the first time you run docker-compose (or if you remove the volume when you stop the
+  containers and remove volume manually). The benefit of named volume is that it will not be removed by Docker even if the
+  container is stopped and removed. This means that our MongoDB database will persist any container stopping, update,
+  crash, or accidental removal and that is what we need for our database. The second volume in webapp service is a
+  host-mounted volume (a bind mount with your local machine), and we have the third named volume which is commented for
+  keeping our applications logs.
+</p>
+<pre><code>webapp:
+    build: ./ShoppingListApp
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ShoppingListApp:/app/ShoppingListApp   # in test
+      #- logs:/app/logs  # in production</code></pre>
+
+<p>
+  The bind mount is defined by "absolute/relative path to directory in local machine : relative path inside the container".
+  I have defined this container because during development and when the Docker containers are running I want to be able to
+  keep developing the application and the modifications should be reflected on the application running inside the container
+  as well so I can see the effects of my changes in code. By default Docker container is completely separated from local machine
+  files and any change to code in my host environment will not be transferred/reflected in container files. However if we
+  are deploying the application into production environment we do not want this bind mount. We do not want to accidentally
+  change production application by changing our local code. Any change to the code should be tested and accepted for production
+  release therefore this bind mount should be used only in development environment/phase.
+</p>
+
+<p>
+  The "logs" named volume is used to store our application logs and we want it to be persistent so if container is removed
+  or crashed we still have access to its logs to check what happened. I have not implemented logging for this application
+  and I could see what I needed in docker container logs (generic logs that Docker provides from stdout in container) so
+  the container is commented for now but it can be used during development as well if you choose so. In production it is
+  very important to have "logs" volume and also implement logging for Flask application. The named volumes should also
+  be listed under "volumes" in docker-compose file.
+</p>
+
+<br>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Flask Application Setup</strong></h4>
+</div>
+
+<p>
+  A mid-sized or large web application can consist of several smaller applications where each one has its own logic,
+  routes, database tables/collections. It is beneficial to separate each sub-application from other ones so they
+  can be developed and modified/refactored independently. For this purpose we implement several best practices. Each
+  sub-application has its own directory with its own routes, data models, forms, and templates.
+</p>
+
+<p>
+  We will bring these sub-applications together in "__init__" method of parent application. For small Flask projects we
+  can create an instance of "Flask" class, initialize it, and run it. That is how usually a Flask app is presented, however
+  for larger projects that can cause some problems. The Flask instance, usually called app, need to be used and imported
+  in data models, blueprints, forms and basically all over the place where it can lead to circular imports issue. We can
+  separate application instance creation from the rest of the application by using
+  <a href="https://flask.palletsprojects.com/en/1.1.x/tutorial/factory/" target="_blank">Application Factory pattern for Setup</a>
+  where we will implement a function, "create_app" to initialize Flask class instance, setup app configurations and context,
+  then register database instance (also LoginManager instance, JWT instance, etc), import and register blueprints, etc.
+  Using this pattern also allows us to run multiple
+  instances of our application simultaneously with different configurations, for example one in development environment
+  and the other one in production. We can define how the app should run in Dockerfile (as seen in the last line of my
+  docker-compose file) or from command line. Below is my implementation for the "__init__.py" content for the application.
+  I am calling the Python files containing routes for each application in this project as "views" to make
+  similarity of this pattern to Django project structure (Model View Template design pattern) more clear.
+</p>
+
+<pre class="prettyprint"><code>from flask import Flask
+from ShoppingListApp.configs import Config
+
+def create_app(config_class=Config):
+    app = Flask(__name__)
+
+    app.config.from_object(config_class)
+
+    from ShoppingListApp.DB.mongodb import db
+    from ShoppingListApp.users.login import login_manager
+    db.init_app(app)
+    login_manager.init_app(app)
+
+    from ShoppingListApp.users.views import user_views
+    from ShoppingListApp.site.views import site_views
+    from ShoppingListApp.shoppingLists.views import shopping_list_views
+    app.register_blueprint(user_views)
+    app.register_blueprint(site_views)
+    app.register_blueprint(shopping_list_views)
+
+    return app</code></pre>
+
+<p>
+  I have used Flask
+  <a href="https://flask.palletsprojects.com/en/1.1.x/patterns/appfactories/" target="_blank">Application Factory</a>
+  pattern guide line in create_app function. All application extensions, MongoEngine and LoginManager for our application,
+  are imported after <em>app</em> (Flask instance) is created but the <em>app</em> is not passed to their constructor, but
+  I used "init_app" method for each extension to bind them with new Flask app. The reason for doing so is that now we can
+  use the same extensions but in different Flask app instance and that is useful if we are planning to run the same applications
+  in different environments with their own separate configurations. Below I show how "db" and "login_manager" instances are
+  created in their corresponding Python scripts.
+</p>
+
+<pre><code>from flask_mongoengine import MongoEngine
+db = MongoEngine()
+===================================
+from flask_login import LoginManager
+login_manager = LoginManager()</code></pre>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>User Login Application</strong></h4>
+</div>
+
+<p>
+    Our user login system will have its own folder containing templates, user views (routes), user model (for database), and
+    forms. Views are user facing functions that contain handling requests delivered to user app.
+    To decouple the routes in user model from the rest of the application we create a new Blueprint.
+    <a href="https://flask.palletsprojects.com/en/1.1.x/blueprints/" target="_blank">Flask Blueprints</a> are great for large
+    applications because they allow us to partition Flask app into smaller and independent applications. Blueprint object
+    would work similar to Flask app object (usually named "app") but it is not a Flask application and a blueprint can be
+    used in multiple applications by registering the blueprint when creating each Flask app. We can also define
+    a "url_prefix" for our sub-app so we can organize our Flask app urls, for example "xxx/user/register" indicates
+    registering a new user while "xxx/shop/register" can be used for registering to a new shop and these two urls will route
+    to two different sub-applications. We can also indicate a path for our sub-application in order to gather all
+    resources for sub-app inside one directory.
+</p>
+
+<p>
+    For the user login app we need to implement four views, registration, login, logout, and reset password (and maybe fifth
+    view for account), with corresponding routes "/register", "/login", "/logout", and
+    "/reset_password". For each view, except /logout view, we serve a form to user and validate the form at submission. If the form is
+    valid then we will do something, for example in /register view we will create a new user and save it to database and
+    then redirect user to home page with a success flash message. If the form is not valid then we will redirect to the
+    same route with a flash message about what went wrong. Implementation of "login" view is as follows:
+</p>
+
+<pre class="prettyprint"><code>user_views = Blueprint("user_views", __name__,
+                       url_prefix="/user", template_folder='templates')
+
+@user_views.route("/login", methods=["POST", "GET"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("site_views.home"))
+
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+        user = User.find_by_username(username)
+        if user is None:
+            flash(f"User with username '{username}' is not registered.", 'danger')
+        else:
+            if not user.match_password(password):
+                flash("Username and password do not match!", 'danger')
+            else:
+                flash("Login successful!", category='success')
+                login_user(user, remember=form.remember.data)
+                next_page = request.args.get('next', url_for("site_views.home"))
+                return redirect(next_page)
+    return render_template("users/login.html", title="Login", form=form)</code></pre>
+
+<p>
+  An important part of a login system is to manage user session, we need to know if a user is logged in or logged out and
+  if logged in then which user. To achieve this we use
+  <a href="https://flask-login.readthedocs.io/en/latest/" target="_blank">Flask-Login</a> extension. Similar to the other
+    extensions we can instantiate an instance of Flask-Login LoginManager and at "create_app" function we will import and then
+    register the app in this login_manager.
+</p>
+
+<pre><code>from flask_login import LoginManager
+
+login_manager = LoginManager()
+login_manager.session_protection = 'strong'
+login_manager.login_view = 'user_views.login'
+login_manager.login_message_category = 'info'</code></pre>
+
+<p>
+    We have to define "login_view" attribute for our LoginManager instance since our login page now only exists in our
+    user app and can be accessed in "user_view" Blueprint. Optionally we can also give some other attributes and you can
+    find them in the documentation. When user is logging in and login form is validated, then we can login the user
+    in login_manager simply by "login_user(user, remember=form.remember.data)". User_id will be stored in login_manager
+    user session and can be accessed in other views and applications (which are registered to Flask app).
+    In order to access user after login then we need to implement "load_user" function decorated with
+    "login_manager.user_loader" and user_id as argument. LoginManager instance will pass the user_id in the session and
+    will use this function to get the user.
+</p>
+
+<p>
+    The remaining important piece of our user login application is implementation of a "User" class as our user model. An
+    instance of the User class will represent a user as Python object, and at the same time it knows how to save and find
+    user to/from the MongoDB database. To do so we will inherit from "db.Document" where "db" stands for the instance of
+    "flask_mongoengine.MongoEngine" that we created at app creation (introduced in the previous section).
+    We need to set MongoDB document fields that we want to be in schema as class attributes and be instance of "db" Fields.
+</p>
+
+
+<pre class="prettyprint"><code>class User(db.Document, UserMixin):
+    username = db.StringField(required=True, min_length=4, max_length=50, unique=True)
+    password = db.StringField(required=True)
+
+    @classmethod
+    def find_by_username(cls, username) -> "User":
+        return cls.objects(username=username).first()
+
+    @classmethod
+    def find_by_id(cls, pk) -> "User":
+        return cls.objects(pk=pk).first()
+
+    @classmethod
+    def hash_password(cls, password):
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode("utf-8")
+
+    def match_password(self, password):
+        return bcrypt.checkpw(password.encode('utf-8'), self.password.encode("utf-8"))
+
+    def __repr__(self):
+        return f"User(username={self.username})"</code></pre>
+
+<p>
+    We also needed to inherit from "flask_login.UserMixin" to let our login_manager to check user login status. According
+    to the
+    <a href="https://flask-login.readthedocs.io/en/latest/" target="_blank">Flask-Login documentation</a> User class should
+    implement four methods, is_authenticated, is_active, is_anonymous, and get_id. However, logging a user and keeping
+    track of authentication status is very common
+    and as the result Flask-Login has also implemented " UserMixin" which has default implementation for all four methods.
+    Inheriting from UserMixin means that we do not need to implement those four functions anymore, unless we want the
+    four methods behave differently in which case we need to provide our own implementation of them.
+</p>
+<!-- ----------------------------------------------------------------------- -->
+{% endblock content %}
