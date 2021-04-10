@@ -1,0 +1,629 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    Dictionaries are natural data type that we can use in Python. They are easy to create, update, and iterate through.
+    However, sometimes we need specific behavior such as saving dictionary keys in a specific format
+    or only allowing some predefined values. That make us to think about extending native dict type and
+    create our own dictionary-like class. For some common cases Python already provides a solution (like DefaultDict) but
+    also there are some high level classes that we can use as our basis for creating a custom dictionary. In this article
+    we will go over some of the dict-like objects from Python and then dive deeper in how a mapping is implemented
+    in order to create a more customized and complex dictionary-like object (like DotDict).
+</p>
+
+<br>
+
+<div class="card bg-light border-dark text-center mb-3">
+  <img class="card-img-top" src="{% static 'blog/images/python_dictionary_title_image.jpg' %}" alt="Dictionary Image">
+  <div class="card-body" style="padding:0.5rem;">
+    <small>
+        Photo by
+        <a href="https://unsplash.com/@rvignes?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank">Romain Vignes</a>
+        on <a href="https://unsplash.com/s/photos/dictionary?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText" target="_blank">Unsplash</a>
+      </small>
+  </div>
+</div>
+
+<ul>
+    <li><a href="#DefaultDict">DefaultDict</a></li>
+    <li>
+        <a href="#UserDict">UserDict</a>
+        <ul>
+            <li><a href="#ImplementingNaiveDict">Implementing A Naive Dictionary-like Class</a></li>
+            <li><a href="#InheritingFromDict">Problems With Inheriting From Dict</a></li>
+            <li><a href="#UserDictImplementation">Inheriting From UserDict</a></li>
+        </ul>
+    </li>
+    <li><a href="#DotDictInheritingFromMutableMapping">DotDict, Inheriting from MutableMapping</a></li>
+    <li><a href="#MappingProxyOfDictionary">MappingProxyType of a Dictionary</a></li>
+</ul>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="DefaultDict"><strong>DefaultDict</strong></h4>
+</div>
+
+<p>
+    Let's consider the task of counting the number of occurrence of each unique word in a text, something that is pretty
+    common in a Natural Language Processing (NLP). At first we might want to do something like below:
+</p>
+
+<pre class="prettyprint linenums=1"><code>sentence = "The quick brown fox jumps over the lazy dog"
+
+words_freq_map = {}
+for word in sentence.split():
+    if word not in words_freq_map:
+        words_freq_map[word] = 1
+    else:
+        words_freq_map[word] += 1
+print(words_freq_map)
+======================= console =======================
+{'The': 1, 'quick': 1, 'brown': 1, 'fox': 1, 'jumps': 1, 'over': 1, 'the': 1, 'lazy': 1, 'dog': 1}</code></pre>
+
+<p>
+    We initialize an empty dictionary to keep track of each unique word (line 3), tokenize sentence to words (here we just
+    do split on the sentence but usually tokenization is a more involved process) and loop over them.
+    Now for every word we explicitly check if that word has already been added to the dictionary, if not then we add it
+    with count equal to 1 and if the word is already in the dictionary then we add one to its counts. We need to check if the key is present because
+    otherwise Python will raise a <strong>KeyError</strong> exception if we try to increment count value of a word that is
+    not present in dictionary (cannot directly use line 8). The explicit check avoids such cases but the code is
+    not optimum since everywhere that we use the words_freq_map dictionary we need to do those checks and the code
+    is not Pythonic. We can do better:
+</p>
+
+<pre class="prettyprint"><code>words_freq_map = {}
+for word in sentence.split():
+    words_freq_map[word] = words_freq_map.get(word, 0) + 1</code></pre>
+
+<p>
+    Now we do not explicitly check if the word is already in dictionary, we use <strong>get</strong> method over dictionary
+    and define a default value if key is not present to be zero and always add one to counts. Seems shorter and more elegant.
+    However we still need to give explicit default value everytime and everywhere we use words_freq_map dictionary, we need
+    a solution that defining the default value is done once and applied for the dictionary everywhere.
+    DefaultDict is a data type that allows us to determine what value should be used if a key is not present in dictionary,
+    and that is done when we initialize the DefaultDict therefore it is kep consistent throughout the code.
+</p>
+
+<pre class="prettyprint linenums=1"><code>from collections import defaultdict
+
+words_freq_map = defaultdict(int)  # equivalent to defaultdict(lambda: 0)
+for word in sentence.split():
+    words_freq_map[word] += 1</code></pre>
+
+<p>
+    Now this is very similar to using usual dict but with the difference that everytime that a key (word) is not in the
+    defaultdict then it will be automatically added to it with default value of integer 0.
+</p>
+
+<p>
+    <a href="https://docs.python.org/3/library/collections.html#collections.defaultdict" target="_blank">DefaultDict</a>
+    is a dictionary like object with all the behavior of a normal dictionary with the exception that we never
+    get KeyError exception because any new key will be added to dictionary with a default value. To create
+    a defaultdict instance we need to pass a <strong>default_factory</strong> argument. In the above example I pass
+    "int" as constructor of int type data (line 3).
+</p>
+
+<p>
+    Similar to dictionary, when an item of DefaultDict is accessed
+    __getitem__(key) is going to be called. Unlike normal dictionary if key is not found then
+    __missing__(key) will be called where a default value for that key is generated using default_factory function
+    (default_factory()). If default_factory is None then Python will raise a KeyError, otherwise a value is generated
+    and stored into the DefaultDict object and the same value will be returned by __getitem__ method.
+</p>
+
+<p>
+    According to the Python collections documentation, the
+    <a href="https://docs.python.org/3/library/collections.html#collections.defaultdict.default_factory" target="_blank">default_factory</a>
+    is the first argument passed to defaultdict constructor and should be a function without any argument.
+    We can use built-In data types constructors like int, str, list or have our own function, or even a lambda function.
+    What follows is creating a defaultdict instance where default_factory is returning a dictionary with random value for
+    first item in dictionary (k1).
+</p>
+
+<pre class="prettyprint"><code>from random import choice
+import string
+
+default_dict = defaultdict(lambda: {"k1": choice(string.digits)})
+for key in "ab":
+    default_dict[key]["status"] = "ok"
+
+print(default_dict)
+======================= console =======================
+defaultdict(&lt;function &lt;lambda&gt; at .&gt;, {'a': {'k1': '3', 'status': 'ok'}, 'b': {'k1': '8', 'status': 'ok'}})
+</code></pre>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="UserDict"><strong>UserDict</strong></h4>
+</div>
+
+<p>
+    DefaultDict extends plain dictionary type and allows us to have some specialized behavior that is not normally
+    available in plain dict type. We might still need more specific behaviors from our dictionary-like types, for example
+    we might want the keys in our dictionary to be strings only or converted to string before being added to dictionary
+    because we want the dictionary to be JSON serializable easily, or we might want only some predefined keys and values
+    to be allowed in our dictionary for example name of countries or a person's eye color and so on. In this section we
+    look into how to extend or wrap Python's native dictionary in order to achieve those tasks.
+</p>
+
+<p>
+    In this section I want to create a dictionary-like class for which keys are always string and they can be used as Python
+    object attributes, meaning no space and only alphanumeric character in the key name are allowed.
+</p>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="ImplementingNaiveDict">
+    <strong>
+      Implementing A Naive Dictionary-like Class
+    </strong>
+  </h4>
+</div>
+
+<p>
+    Initially we might think that we only need to create a new class that has __setitem__ and __getitem__ methods
+    implemented according to our requirements. We need to control when a new item is set and convert keys to be string
+    and also control how the items are accessed.
+    The implementation is straightforward, we store the data into an internal dictionary ("_data") which
+    we initialize in the constructor (__init__). We will implement a class method to convert/transform key objects into our required
+    formatted key string. In __setitem__ we simply convert the key from argument before putting the item in the
+    internal dictionary ("_data") and in __getitem__ we fetch the same item with the converted key. The implementation
+    can be something like this:
+</p>
+
+
+<pre class="prettyprint linenums=1"><code class="language-python">class NaiveDict:
+    def __init__(self, **kwargs):
+        self._data = dict(**kwargs)
+
+    def __setitem__(self, key, value):
+        print(f"__setitem__ called with key='{key}', and value='{value}'")
+        self._data[self.__convert_key(key)] = value
+
+    def __getitem__(self, key):
+        return self._data[self.__convert_key(key)]
+
+    def __str__(self):
+        return json.dumps(self._data, indent=4, ensure_ascii=True)
+
+    @classmethod
+    def __convert_key(cls, key):
+        key = re.sub(r'^\d+', '', str(key).lower()).strip()
+        return re.sub(r'\W+', '_', key)</code></pre>
+
+<pre class="prettyprint linenum=1"><code class="language-python">d = NaiveDict(b=7)
+d["key with space"] = "v1"
+print(d)</code></pre>
+<pre><code>__setitem__ called with key='key with space', and value='v1'
+{
+    "b": 7,
+    "key_with_space": "value of key with space"
+}</code></pre>
+
+<p class="text-justify">
+    All looks working so far, input keys are transformed and we can use bracket notation to set or access items.
+    However this implementation does not provide us with "<strong>get</strong>", "<strong>update</strong>",
+    "<strong>pop</strong>", "<strong>popitem</strong>", "<strong>del</strong>" and
+    "<strong>keys</strong>" and "<strong>items</strong>" views. Therefore there are many methods that we need to implement to
+    have normal dictionary behavior. A better solution might be to inherit from <strong>dict</strong> itself.
+</p>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="InheritingFromDict">
+    <strong>
+      Problems With Inheriting From Dict
+    </strong>
+  </h4>
+</div>
+
+<p>
+    We can try to inherit from dict type and end up with a class like below:
+</p>
+
+<pre class="prettyprint linenums=1"><code class="language-python">class InheritedDict(dict):
+    def __setitem__(self, key, value):
+        print(f"__setitem__ called with key='{key}', and value='{value}'")
+        super().__setitem__(self.__convert_key(key), value)
+
+    def __getitem__(self, key):
+        return super().__getitem__(self.__convert_key(key))
+
+    def __str__(self):
+        return json.dumps(self, indent=4, ensure_ascii=True)
+
+    @classmethod
+    def __convert_key(cls, key):
+        key = re.sub(r'^\d+', '', str(key).lower()).strip()
+        return re.sub(r'\W+', '_', key)</code></pre>
+
+<pre class="prettyprint linenums=1"><code class="language-python">d = InheritedDict(b=7)
+d["key with space"] = "v1"
+d.update({"1 key with digit": "v2"})
+d["2 second key with digit"] = "v3"
+print(d)</code></pre>
+
+<p>And the result in console is:</p>
+<pre>__setitem__ called with key='key with space', and value='v1'
+__setitem__ called with key='2 second key with digit', and value='v2'
+{
+    "b": 7,
+    "key_with_space": "v1",
+    "1 key with digit": "v2",
+    "second_key_with_digit": "v3"
+}</pre>
+
+<p>
+    As can be seen from above code snippet, using "update" on our dictionary is available but it is not using our
+    __setitem__ because we do not see the corresponding print message for "1 key with digit" key of line 3. In fact
+    Python is using the C code implementation for "update". The same is true for "get", "keys", "items", "pop", and "popitem".
+    These implementations in C language are done probably for better performance. That is a problem since some of our keys
+    are converted to our required format but some are not and that depends on how our "InheritedDict" object is used. This
+    is the problem with inheriting from dict or any built-in type in Python. However Python provides us with
+    <strong>UserDict</strong> wrapper for dict which actually uses our overridden __setitem__ and __getitem__
+    implementations, so let's check it out.
+</p>
+
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="UserDictImplementation">
+    <strong>
+      Inheriting From UserDict
+    </strong>
+  </h4>
+</div>
+<p>
+    <a href="https://docs.python.org/3/library/collections.html#collections.UserDict" target="_blank">UserDict</a> is
+    Python's high level wrapper for dict-like classes and is part of
+    <a href="https://docs.python.org/3/library/collections.html" target="_blank">collcetions</a> module. Inheriting from
+    UserDict we only need to implement __setitem__ and __getitem__ (in general we might only need one of these methods)
+    and Python will provide us with other methods of dict type. The important point is that now those methods (update,
+    get, keys, etc.) will use our overridden __setitem__ and __getitem__ methods and not the C code implementations.
+</p>
+
+<pre class="prettyprint linenums=1"><code class="language-python">class InheritedUserDict(UserDict):
+    def __setitem__(self, key, value):
+        print(f"__setitem__ called with key='{key}', and value='{value}'")
+        super().__setitem__(self.__convert_key(key), value)
+
+    def __getitem__(self, key):
+        print(f"__getitem__ called with key='{key}'")
+        return super().__getitem__(self.__convert_key(key))
+
+    def __str__(self):
+        return json.dumps(self.data, indent=4, ensure_ascii=True)
+
+    @classmethod
+    def __convert_key(cls, key):
+        key = re.sub(r'^\d+', '', str(key).lower()).strip()
+        return re.sub(r'\W+', '_', key)</code></pre>
+
+<pre class="prettyprint linenums=1"><code class="language-python">d = InheritedUserDict(b=7)
+d["key with space"] = "v1"
+d.update({"1 key with digit": "v2"})
+d["2 second key with digit"] = "v3"
+d.get("key_with_digit")
+print(d)</code></pre>
+<pre class="linenums=1">__setitem__ called with key='b', and value='7'
+__setitem__ called with key='key with space', and value='v1'
+__setitem__ called with key='1 key with digit', and value='v2'
+__setitem__ called with key='2 second key with digit', and value=v3
+__getitem__ called with key='key_with_digit'
+value of key with digit
+{
+    "b": 7,
+    "key_with_space": "value of key with space",
+    "key_with_digit": "value of key with digit",
+    "second_key_with_digit": "value of key with digit"
+}</pre>
+
+<p>
+    As you can see, (line 3 of second code snippet) update method is also using __setitem__ (we can check that by
+    following the printed key in console output), and the same is true for get method using __getitem__. UserDict class
+    has implementation for all the dict-like methods, therefore we only override what we need to and let the rest of methods
+    (like __delitem__, __copy__, __iter__, __len__, etc.) to be taken care of by UserDict.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="DotDictInheritingFromMutableMapping"><strong>DotDict, Inheriting from MutableMapping</strong></h4>
+</div>
+
+<p>
+    We can use UserDict to intercept/modify setting or getting attributes to a dictionary.
+    Now We want to add more complex behavior to our dict-like class, and that is to override "." dot operator.
+    This should affect setting a new item or getting a value by using a key.
+    For example desired outcome should be like as follows:
+</p>
+<pre><code>d={"k1": "v1"}
+d.k1 => "v1" (getting the item)
+d.k2 = "v2" (setting a new item)
+d => {"k1": "v1", "k2": "v2"} (__str__ of d, not necessarily d itself)</code></pre>
+
+<p>
+    This requires us to override quite a lot of methods including __setattr__ and __getattr__ which are basic methods
+    available for any class (which inherits from object type). The important challenge is to couple the get/set items with
+    get/set attributes. Let's call this new dict-like class "<strong>DotDict</strong>".
+</p>
+
+<p>
+    Another nice property to have is to be able to iterate through our DotDict instances but instead of getting
+    dictionaries for nested items we want to get DotDict instances corresponding to those data.
+    Allow me to illustrate by an example of desired behavior:
+</p>
+
+<pre><code>d = DotDict(k1={"k2": "v2"})
+for key, val in d.items():
+    print(f"For key={key}, value type is {type(val)}, val=\n{val}")
+====================== console ==============
+For key=k1, value type is &lt;class '__main__.DotDict'&gt;, val=
+{
+    "k2": "v2"
+}
+</code></pre>
+
+<p>
+    As you can see the returned value for "k1" is not a dictionary but a DotDict object and this makes usage of our DotDict objects
+    consistent since we will not change our data types after iteration. Therefore we need our implementation to be able
+    to handle any level of nesting lists or dictionaries.
+</p>
+
+<p>
+    The descriptions above indicate that using UserDict will not be enough and we are going to create a more low level
+    dict-like object. We are going to use
+    <a href="https://docs.python.org/3/library/collections.abc.html#collections.abc.MutableMapping" target="_blank">MutableMapping</a>
+    abstract class which is located at collections.abs module. UserDict inherits from MutableMapping itself (can check that by
+    using help function over it, i.e. help(UserDict)) and now we want to inherit from this abstract class.
+</p>
+
+<p>
+    We need to implement abstract methods from several layers of abstraction, __setitem__ and __delitem__ from MutableMapping
+    itself, __getitem__ from Mapping (MutableMapping inherits from Mapping), __len__ (from collection) which is required
+    for iterating over dictionary as well, and __iter__ (from Iterable) which is going to return our custom iterator.
+    As discussed above we also implement __getattr__ and __setattr__ to change behavior of dot operator, and implement
+    __str__ method to have a json representation of the corresponding dictionary (I just like how JSON pretty print looks
+    but you can choose to have a different format or even implement __repr__ instead of __str__). What follows is my
+    implementation of DotDict class:
+</p>
+
+<pre class="prettyprint linenums=1"><code class="language-python">class DotDict(MutableMapping):
+    def __init__(self, *args, **kwargs):
+        self.__data = kwargs
+        self.update(**kwargs)
+
+    def __getitem__(self, key):
+        try:
+            return getattr(self, self.__convert_key(key))
+        except AttributeError:
+            raise KeyError(key)
+
+    def __setitem__(self, key, value):
+        print(f"__setitem__ called with {key} and {value}")
+        setattr(self, self.__convert_key(key), value)
+
+    def __delitem__(self, key):
+        del self.__data[self.__convert_key(key)]
+        del self.__dict__[self.__convert_key(key)]
+
+    def __setattr__(self, prop: str, value):
+        if prop == "_DotDict__data":
+            super().__setattr__(prop, value)
+        else:
+            if isinstance(value, (list, tuple)):
+                prop_obj = self.create_prop_obj_for_list_recursively(value)
+            elif isinstance(value, Mapping):
+                prop_obj = DotDict(**value)
+            else:
+                prop_obj = value
+            super().__setattr__(prop, prop_obj)
+            self.__data[prop] = value
+
+    def __iter__(self):
+        iterator = iter(self.__dict__)
+        next(iterator)  # first key is _DotDict__data, so should not be in view
+        return iterator
+
+    def __len__(self):
+        return len(self.__data)
+
+    def __str__(self):
+        return json.dumps(self.to_dict(), indent=4)
+
+    def to_dict(self):
+        self.__data = {prop: self.call_to_dict_recursively(value) for prop, value in self.items()}
+        return self.__data
+
+    @classmethod
+    def __convert_key(cls, key):
+        key = re.sub(r'^\d+', '', str(key)).strip()
+        return re.sub(r'\W+', '_', key)
+
+    @classmethod
+    def create_prop_obj_for_list_recursively(cls, value):
+        # this method could be static, I just don't like static methods in Python
+        if isinstance(value, (list, tuple)):
+            prop_obj = []
+            for v in value:
+                prop_obj.append(cls.create_prop_obj_for_list_recursively(v))
+        elif isinstance(value, Mapping):
+            prop_obj = cls(**value)
+        else:
+            prop_obj = value
+        return prop_obj
+
+    @classmethod
+    def call_to_dict_recursively(cls, value):
+        if isinstance(value, cls):
+            return value.to_dict()
+        elif isinstance(value, (list, tuple)):
+            result = []
+            for v in value:
+                result.append(cls.call_to_dict_recursively(v))
+            return result
+        else:
+            return value</code></pre>
+
+<p>
+    Before going through the implementation let's check if it does what we expected from it:
+</p>
+<pre class="prettyprint linenums=1"><code class="language-python">d = DotDict(k1="v1")
+d.k2 = "new value 2"
+d["key with space"] = {"nestedKey1": "nestedValue1"}
+d.dotkey = DotDict(nestedDotKey="nestedDotValue")
+print("d.key_with_space.nestedKey1 => ", d.key_with_space.nestedKey1)
+d.dotkey.newNestedKey = ["nk1", {"nk2": ["nk3", "nk4", {"nk5": "nv5"}]}]
+print("d.dotkey.newNestedKey[1].nk2[2].nk5=> ", d.dotkey.newNestedKey[1].nk2[2].nk5)
+print(d)</code></pre>
+
+<p>
+    And the result in console is:
+</p>
+<pre><code>d.key_with_space.nestedKey1 =>  nestedValue1
+d.dotkey.newNestedKey[1].nk2[2].nk5=> nv5
+{
+    "k1": "v1",
+    "k2": "new value 2",
+    "key_with_space": {
+        "nestedKey1": "nestedValue1"
+    },
+    "dotkey": {
+        "nestedDotKey": "nestedDotValue"
+    }
+}</code></pre>
+
+<p>
+    As shown above setting new items works as expected, even for deeply nested values as shown in line 6 of the
+    second snippet. Another nice property is that we can directly set a dictionary as value for a key (line 3 and 6) and they
+    will be converted to instant attributes automatically because __setitem__ in our implementation is also using
+    __setattr__ recursively.
+</p>
+
+<p>
+    Now let's go through the DotDict class. First we are inheriting from MutableMapping as discussed above. We will keep
+    an internal dictionary <em>__data</em> (we use double underscore for name mangling to avoid name conflict) and will
+    keep raw inputs in it. Also in initialization we will use "update" method available in
+    MutableMapping class where our overridden __setitem__ will be called for each key-value pair which then calls
+    DotDict __setattr__, it is easier to let Python take care of that with our methods.
+</p>
+
+<p>
+    __getitem__ will simply call __getattr__ in order to get the key (after conversion) as attribute of the DotDict
+    instance. We need to raise KeyError in case that key is not an attribute of the instance therefore we catch
+    AttributeError and raise a KeyError instead to make our DotDict behave like a dictionary. We have chosen to return
+    object attribute in response of getitem, another choice is to use __data dictionary and we will return what a normal
+    dictionary will return.
+</p>
+
+<p>
+    Next __setitem__ which simply converts the key and calls __setattr__. __delitem__ will remove the corresponding key
+    from __data and also from instance by deleting it from __dict__ of the instance. However there is a technical
+    challenge with deleting from a nested item. If we remove item from nested data, __data corresponding to that level
+    will be updated, but __data of higher levels are not and we cannot know what is the level we are in when __delitem__
+    is called. Therefore we should be careful using __data as is. In our implementation __data is used for __len__ method,
+    which is ok since length of dictionary does not depend on its nested data. We might also use __data for representation
+    methods, __str__ or __repr__, but then we should re-create __data from attributes recursively before using it. That is
+    what "to_dict" via "call_to_dict_recursively" is doing
+</p>
+
+<p>
+    __iter will simply return an iterable and since all the items are stored as attribute on the instance, we return iterator
+    over instance __dict__, except that the first key (from Python 3.6 order of items is guaranteed for dictionary) which
+    is the first attribute we added, __data (which is transformed to _DotDict__data due to name mangling).
+</p>
+
+<p>
+    Finally the most important method __setattr__ which will be called directly if we use "." (dot) operator on DotDict
+    instances and will be called indirectly from __setitem__ if we use "update" method or bracket notation. Here we
+    check if value is instance of list or tuple. If so we need to iterate through value and do the same checks for each
+    element. If the value is a Mapping instance (can be dict or DotDict for our case) then we will convert it ro a DotDict
+    instance with items from the mapping. If value is neither list, tuple, or mapping, then we set the corresponding
+    attribute value to it because we do not know what to do with the value, but the hope is that the value is a primitive
+    type like string or number.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="MappingProxyOfDictionary"><strong>MappingProxyType of a Dictionary</strong></h4>
+</div>
+
+<p>
+    Every class in Python has an attribute __dict__ which is a dictionary-like structure containing information about
+    class, its methods and attributes. However it does not behaves exactly like a dictionary because we cannot really change
+    its values.
+</p>
+<pre class="prettyprint linenums=1"><code class="language-python">class Test:
+    pass
+
+test = Test()
+print(f"Test.__dict__ => {type(Test.__dict__)}")
+print(f"test.__dict__ => {type(test.__dict__)}")
+==================== console =========================
+Test.__dict__ => &lt;class 'mappingproxy'&gt;
+test.__dict__ => &lt;class 'dict'&gt;</code></pre>
+
+<p>
+    As shown above class __dict__ is not writable but the class instance (test) __dict__ is a usual dict type. If we try to update or
+    set a value in class __dict__ we get TypeError exception:
+</p>
+
+<pre><code>Test.__dict__["myKey"] = 2
+==================== console =========================
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+...
+----> 1 Test.__dict__["myKey"] = 2
+
+TypeError: 'mappingproxy' object does not support item assignment</code></pre>
+
+<p>
+    So what is this "MappingProxy" type? According to the documentation of
+    <a href="https://docs.python.org/3/library/types.html" target="_blank">Types</a>, MappingProxyType is a read-only proxy
+    of a mapping and it provides a dynamic view on the mapping's entries. This means that a MappingProxyType object will
+    not allow the underlying dictionary to be modified and only allows read access. Moreover, if the underlying mapping (dict for our case) changes
+    then the change will be reflected in the MappingProxy.
+</p>
+
+<p>
+    These properties make MappingProxyType a convenient way of passing dictionaries around and be sure that it will not
+    be changed by other part of the code. And it is very easy to create a mapping proxy of a dictionary:
+</p>
+
+<pre class="prettyprint"><code class="language-python">from types import MappingProxyType
+d = {"k1": "v1", "k2": "v2"}
+d_mp = MappingProxyType(d)</code></pre>
+
+<p>
+    Now we cannot edit "d_map":
+</p>
+<pre><code>d_mp["k1"] = "v11"
+---------------------------------------------------------------------------
+TypeError                                 Traceback (most recent call last)
+...
+----> 1 d_mp["k1"] = "v11"
+
+TypeError: 'mappingproxy' object does not support item assignment</code></pre>
+
+<p>
+    But changes to "d" (original dict) will be reflected in "d_mp" (MappingProxyType of original dict):
+</p>
+<pre><code>d["k1"] = "v11"
+print(d_mp)
+==================== console =========================
+{'k1': 'v11', 'k2': 'v2'}</code></pre>
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<p>
+    Thank you for your time and hope that this post can help you work with dictionaries in Python a bit easier.
+</p>
+{% endblock content %}

@@ -1,0 +1,693 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<p>
+    An application usually have dependency on other applications or web services. With microservices design an application
+    can be in contact with several web services to fetch or modify data, for example a mobile banking application will rely
+    of database web services to obtain user data and statuses, or to store any change requested by user. Testing such
+    applications requires having external dependencies be available and also behave as they would in production environment.
+</p>
+
+<p>
+    A lot can go wrong when an application depends on other applications readiness, for example those applications should
+    be already implemented and available all the time in quality assurance environment, or we might need to test how
+    our application behaves if a particular web service is not responding correctly which would require coordination
+    between different teams. These possible problems will make regression testing also difficult and sometimes unreliable.
+    Mocking or stubbing the responses from the external services according to our testcase requirements will remove the
+    aforementioned problems.
+</p>
+
+<br>
+<div class="card bg-light border-dark text-center mb-3">
+  <img class="card-img-top" src="{% static 'blog/images/wiremock_title_image.jpg' %}" alt="WireMock Reflection Image">
+  <div class="card-body" style="padding:0.5rem;">
+    <small>
+        Photo by
+      <a href="https://unsplash.com/@krutainis?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Ivars Krutainis</a>
+      on <a href="https://unsplash.com/s/photos/reflection?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+      </small>
+  </div>
+</div>
+
+<p>
+    <a href="http://wiremock.org/" target="_blank">WireMock</a> allows us to mock responses of external web services
+    and itself is a HTTP server so we can actually interact with it via REST Api calls. It is free, fast, and flexible
+    and a very good candidate to replace our external dependencies in system or end-to-end testing.
+</p>
+
+<ul>
+    <li><a href="#RunningWireMockStandaloneProcess">Running WireMock as a Standalone Process</a></li>
+    <li><a href="#WorkingWithWireMockRoutesAndHelpers">Working with WireMock Routes and Helpers</a></li>
+    <li>
+        <a href="#CreatingWireMockProjectInPython">Creating A WireMock Project In Python</a>
+        <ul>
+            <li><a href="#RunningWireMockServerInPythonContextManagerSubprocess">Running WireMock Server In Python, with ContextManager and Subprocess module</a></li>
+            <li><a href="#SettingNewStubDataInWireMockViaREST">Setting New Stub Data in WireMock via REST in Python</a></li>
+            <li><a href="#UnitTestsForWireMockProject">UnitTests for WireMock Project</a></li>
+        </ul>
+    </li>
+</ul>
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="RunningWireMockStandaloneProcess"><strong>Running WireMock as a Standalone Process</strong></h4>
+</div>
+
+<p>
+    We can run WireMock as a standalone process in our machine or in a (docker) container using its jar file with some
+    configurations options passed as argument. The jar file and command line options are available at
+    <a href="http://wiremock.org/docs/running-standalone/" target="_blank">here</a>.
+</p>
+
+<p>
+    After download the jar file, you can simply execute a command in your terminal to start WireMock Standalone process.
+    A simple command if you are in the same directory as the jar file is:
+</p>
+<pre><code>java -jar wiremock-standalone-2.27.2.jar</code></pre>
+
+<p>
+    This will create a new process in your machine or container and by default makes the WireMock available at port 8080.
+    However we might need more fine tuning for our project for example port number. In this article I use a few extra
+    arguments when running WireMock:
+</p>
+<ul>
+    <li>--port: for which port to use for HTTP requests. I will be using 9999.</li>
+    <li>
+        --root-dir: sets root directory for WireMock, where __files and mappings will be stored. I use this argument to
+        put those files inside my project. Usually that is not required unless you want to have those files in a more
+        convenient location.
+    </li>
+    <li>
+        --verbose: To have verbose level logging. For testing WireMock and learning it, can be good to have more logging
+        but after that process we might want to remove this option.
+    </li>
+    <li>
+        --global-response-templating: Officially this renders all response definitions using Handlers templates. To me
+        that means that we can use all handlers to work with incoming request, for example echoing a property from request
+        in response. We will look into conditional and dynamic responses based on incoming request and this option is
+        required for those scenarios. If you are planning to always use static responses then you do not need this option.
+    </li>
+</ul>
+
+<p>
+    In the last part of this article we will see how to start WireMock subprocess from a Python script, but for now we
+    can simply type following in our terminal:
+</p>
+<pre><code>java -jar path_to_wiremock_jar --port 9999 --verbose --global-response-templating --root-dir path_to_wiremock_files</code></pre>
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="WorkingWithWireMockRoutesAndHelpers"><strong>Working with WireMock Routes and Helpers</strong></h4>
+</div>
+
+<p>
+    Postman is an excellent application for API development and testing, it allows us to create collections of HTTP(S)
+    requests, configure multiple environments, writing testcases to validate responses, and also if you want automate all
+    those tests. It is free and very popular for testing or experimenting with any HTTP-based API.
+</p>
+
+<p>
+    In this section we will have a look at how to configure WireMock stubs and mock data, how to set mocked response for
+    an endpoint, how to actually call that endpoint and test response. Let's have a look at important generic
+    <a href="http://wiremock.org/docs/wiremock-admin-api.html" target="_blank">admin</a> endpoints that are available
+    right away when WireMock Server is running. If you are running WireMock in your local machine the base url for accessing
+    your WireMock instance is "http://127.0.0.1:wmPort" where <em>wmPort</em> is port number you used when starting WireMock
+    process (from the previous section), and if you are connecting to an instance of WireMock somewhere else then you
+    probably have an actual address instead of just IP. We will refer to this url <strong>baseUrl</strong>.
+    The available generic routes are at "baseUrl/__admin" (<strong>adminUrl</strong>) route and the most important ones are these:
+</p>
+<ul>
+    <li>
+        <strong>/mappings</strong>
+        <ul>
+            <li>
+                GET: This will return all the mappings set in WireMock so far. If this is the first time using it then it will
+                return empty list of mappings. This request can also be used as a health check for WireMock Server to
+                check whether it is still running, a http response with status code 200 means yes.
+            </li>
+            <li>
+                POST: This request with appropriate body will create a new mapping in the mappings. This new mapping
+                will correspond to new response for an endpoint.
+            </li>
+            <li>
+                POST to <strong>/reset</strong> (full url is adminUrl/mappings/reset): This call will
+                clear out everything in mappings. This call might be used at test teardown to make sure nothing from
+                previous test is remaining to influence the next test.
+            </li>
+        </ul>
+    </li>
+    <li>
+        <strong>/reset</strong>
+        <ul>
+            <li>
+                POST: a request with empty body will clear all the mappings and request logs. If you want to come back and
+                checkout requests that were received by WireMock to verify they are correct then maybe not use this endpoint
+                until you are done with your analysis.
+            </li>
+        </ul>
+    </li>
+    <li>
+        <strong>/requests</strong>
+        <ul>
+            <li>
+                GET: a GET call to this endpoint will return all the requests received by WireMock. This will also include
+                the requests which did not have any match in your mappings and therefore got http 404 in response.
+            </li>
+            <li>
+                POST to <strong>/find</strong>: with appropriate body a POST to this route (adminUrl/requests/find)
+                will return requests for only the specific endpoint with ot without specific HTTP method.
+            </li>
+        </ul>
+    </li>
+    <li>
+        <strong>/shutdown</strong>
+        <ul>
+            <li>
+                POST: an empty body POST to this route will result in wireMock Server shutdown. You should be careful
+                using this endpoint if restarting your WireMock Server is not very straightforward.
+            </li>
+        </ul>
+    </li>
+</ul>
+
+<p>
+    To set a new mock data in wireMock we need to make a POST call to adminUrl/mappings with request body template as follows:
+</p>
+
+<pre><code>{
+    "request": {
+        "method": method (HTTP method of the mocked request, POST, GET, etc.),
+        "url": url (relative url of the mocked service, e.g. /test)
+    },
+    "response": {
+        "status": status_code, (status_code of mocked service)
+        "body": body,  (mocked response body)
+        "headers": headers (mocked service response headers)
+    }
+}</code></pre>
+
+<p>
+    Now let's get into the main part, how to mock a response. We will go through some of the functions that we might need
+    to do on the request to create responses and we will focus on the mocked response body.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="row d-flex text-center">
+    <div class="col-sm border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>Response Body Definition</code></pre>
+    </div>
+</div>
+<div class="row">
+    <div class="col-sm border-right border-info" style="padding:0;">
+      <pre style="margin:0;"><code>Request</code></pre>
+    </div>
+    <div class="col-sm border-info" style="padding:0;">
+      <pre style="margin:0;"><code>Response</code></pre>
+    </div>
+</div>
+
+<p>
+    To continue I will use above format to illustrate response body definition that we put to WireMock, an example
+    request (seconds row left) and response to that request (second row right).
+</p>
+
+<p>
+    The simplest type of response would be a fixed one, not matter what request is sent we will reply the same response.
+    We can add more requirements maybe on headers but if not then the reply will always be the same.
+</p>
+<div class="row d-flex text-center">
+    <div class="col-sm border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>{"message":"Hello Multiverse!"}</code></pre>
+    </div>
+</div>
+<div class="row">
+    <div class="col-sm border-right border-info" style="padding:0;">
+      <pre style="margin:0;"><code>Any Request</code></pre>
+    </div>
+    <div class="col-sm border-info" style="padding:0;">
+      <pre style="margin:0;"><code>{"message":"Hello Multiverse!"}</code></pre>
+    </div>
+</div>
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<p>
+    Now let's move onto a more complex response definition. We want to be able to use a value of a property of request
+    in response of it. We have two main helpers that can use for JSON and SOAP requests. JsonPath helper can be used in
+    JSON requests and it requires two arguments, first a json data to search in it, and second json path of the property.
+    Below is an example where we check request body (which should be JSON) and use value of "name" property in response.
+</p>
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-12 border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;&quot;message&quot;: &quot;Hello &#123;&#123;jsonPath request.body '&#65284;.name'&#125;&#125;&quot;&#125;</code></pre>
+    </div>
+</div>
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-md-6 border-right border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;
+    &quot;name&quot;: &quot;Taher&quot;,
+    &quot;age&quot;: &quot;36&quot;,
+    &quot;Details&quot;: &#123;
+        &quot;RegistrationDate&quot;: &quot;01-04-2021&quot;
+    &#125;
+&#125;</code></pre>
+    </div>
+    <div class="col-md-6 border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>{"message": "Hello Taher"}</code></pre>
+    </div>
+</div>
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<p>
+    A similar process can be done over SOAP requests by using soapXPath (for XML we can use xPath). The difference is
+    that now we should have a SOAP (XML) request body and instead of JSON path we use XPath and to get the text and not
+    the node itself we need "text()" at the end of XPath..
+</p>
+
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-12 border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>&lt;Person&gt;&#123;&#123;soapXPath request.body './/name/text()'&#125;&#125;&lt;/Person&gt;</code></pre>
+    </div>
+</div>
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-md-6 border-right border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;
+&lt;soap:Envelope&quot;&gt;
+  &lt;soap:Body&gt;
+    &lt;Person&gt;
+      &lt;name&gt;Taher&lt;/name&gt;
+      &lt;age&gt;36&lt;/age&gt;
+    &lt;/Person&gt;
+  &lt;/soap:Body&gt;
+&lt;/soap:Envelope&gt;</code></pre>
+    </div>
+    <div class="col-md-6 border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&lt;Person&gt;Taher&lt;/Person&gt;</code></pre>
+    </div>
+</div>
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<p>
+    We can even use conditional logic to return different response based on properties in request message. Below we are
+    checking if the "age" property in request is above 18 or not and change response message based on that. To see more
+    of the conditional checkout
+    <a href="https://www.mocklab.io/docs/response-templating/conditional-logic-and-iteration/" target="_blank">MockLab</a>.
+</p>
+
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-12 border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;&quot;message&quot;: &quot;Hello &#123;&#123;jsonPath request.body '&#65284;.name'&#125;&#125;.
+          &#123;&#123;#gt (jsonPath request.body '&#65284;.age') 18&#125;&#125;You can enter&#123;&#123;else&#125;&#125;Should be 18 or above.&#123;&#123;/gt&#125;&#125;&#125;
+</code></pre>
+    </div>
+</div>
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-md-6 border-right border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;
+    &quot;name&quot;: &quot;Taher&quot;,
+    &quot;age&quot;: 15
+&#125;</code></pre>
+    </div>
+    <div class="col-md-6 border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;
+    &quot;message&quot;: &quot;Hello Taher. Should be 18 or above.&quot;
+&#125;</code></pre>
+    </div>
+</div>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<br>
+<p>
+    If we have a list/array type in request body we might want to iterate through them and perform some action. Equivalent
+    of "for" would be "each" helper. Below we see an example of looping over list of "People", extract name and add the
+    name to greeting message in response.
+</p>
+
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-12 border-bottom border-info text-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;&quot;message&quot;: &quot;Hello &#123;&#123;#each (jsonPath request.body '&#65284;.People') as |P|&#125;&#125;
+          &#123;&#123;#if @last&#125;&#125;&#123;&#123;P.name&#125;&#125;&#123;&#123;else&#125;&#125;&#123;&#123;P.name&#125;&#125; and &#123;&#123;/if&#125;&#125;
+          &#123;&#123;/each&#125;&#125;.&quot;&#125;</code></pre>
+    </div>
+</div>
+<div class="row" style="background-color:#EFF0F1">
+    <div class="col-md-6 border-right border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;
+    &quot;People&quot;: [
+        &#123;
+            &quot;name&quot;: &quot;Taher&quot;,
+            &quot;age&quot;: 36
+        &#125;,
+        &#123;
+            &quot;name&quot;: &quot;Batman&quot;,
+            &quot;age&quot;: 14
+        &#125;
+    ]
+&#125;</code></pre>
+    </div>
+    <div class="col-md-6 border-info align-self-center" style="padding:0;">
+      <pre style="margin:0;"><code>&#123;&quot;message&quot;: &quot;Hello Taher and Batman.&quot;&#125;</code></pre>
+    </div>
+</div>
+
+<p>
+    The Postman collection corresponding to these example can be found in my GitHub
+    <a href="https://github.com/TaherAmlaki/PythonTutorials/blob/main/WireMockTutorial/WireMock%20Tutorial.postman_collection.json" target="_blank">link</a>.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center" id="CreatingWireMockProjectInPython"><strong>Creating A WireMock Project In Python</strong></h4>
+</div>
+
+<p>
+    We can build a project in Python to start WireMock Server, connect to it, set mock data and basically perform our
+    tests. In the next sections we will implement a
+    <a href="https://docs.python.org/3/library/contextlib.html#contextlib.contextmanager" target="_blank">ContextManager</a>
+    in Python to start WireMock Server as a subprocess in our machine and automatically close it when we are done with
+    the tests. After that we will create some tests to set data and retrieve from WireMock.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="RunningWireMockServerInPythonContextManagerSubprocess">
+    <strong>
+      Running WireMock Server In Python, with ContextManager and Subprocess module
+    </strong>
+  </h4>
+</div>
+
+<p>
+    If starting WireMock Server from terminal before you start testing and terminating it when testing is finished,
+    then you can skip this section.
+</p>
+
+<p>
+  Using external resources like databases or using WireMock local server in our case is a very common. Since our
+  resources are limited we want to release the resources as soon as we are done our task. For that reason we might want
+  to control running WireMock process and stopping it from a script, to start the server before our tests and automatically
+  shutdown WireMock server when we are completed our testing.
+</p>
+
+<p>
+  Python provides ContextManager pattern to manager resources programmatically. The most familiar usage of a ContextManager
+  is for reading/writing files, where we use "with" keyword to open a file. Something like this:
+</p>
+<pre><code>with open("example.txt", "r") as f:
+    data = f.read()</code></pre>
+
+<p>
+  The benefit of opening a file with above method is that Python will close the file automatically. Even if an exception
+  is raised somewhere inside our with-block due to opening the file or processing it Python will catch the exception and
+  will close the file whether we decide to handle the exception or propagate it.
+</p>
+
+<p>
+  We will implement a ContextManager class to start WireMock server before our test start and shutdown the server at any
+  scenario. In __init__ method we will pass WireMock jar file path and root_dir as the location to store WireMock files,
+  __files and mappings. To be able to use response templating for any request I also added --global-response-templating.
+</p>
+
+<p>
+  __enter__ and __exit__ methods are the main required methods for ContextManager pattern. Implementing them will make us
+  able to use our context manager with keyword "with". __enter__ method will be called when context manager is about to
+  start (not initiated but start) and its return value will be available as local variable in our script.
+</p>
+
+<pre><code>wm_context = WireMockContext(jar_path, root_dir) <span style="color:DodgerBlue">(initializing with __init__)</span>
+with wm_context as wm: <span style="color:DodgerBlue">(__enter__ will be called and its return value is stored as wm)</span>
+  // do things here
+<span style="color:DodgerBlue">(__exit__ will be called before next line of code)</span></code></pre>
+
+<p>
+  A more compact form will have initialization and start of context in the with-block start:
+</p>
+<pre><code>with WireMockContext(jar_path, root_dir) as wm: <span style="color:DodgerBlue">(__init__ and then __enter__)</span>
+  // do things here
+<span style="color:DodgerBlue">(__exit__ will be called before next line of code)</span></code></pre>
+
+<p>
+    In order to run the WireMock jar file we need to create a new subprocess in our machine and run WireMock commands for
+    start of the server. Python provides us <a href="https://docs.python.org/3/library/subprocess.html" target="_blank">Subprocess</a>
+    module where we can invoke a new subprocess programmatically and communicate with that process as well, for example
+    reading the return value of our commands (if process does not end like WireMock Server process than we will not get
+    any value) or read output of the process. We will use
+    <a href="https://docs.python.org/3/library/subprocess.html#subprocess.Popen" target="_blank">Popen</a> object to create
+    our process. We do not simply use "run" or "call" because we want to have more control over the process but it is not
+    strictly required to use Popen. The output of the process are by default written to underlying PIPE and
+    we can redirect them to our Popen object.
+</p>
+
+<p>
+    In <em>__enter__</em> method we will run the subprocess and will check if the output contains any indication of error.
+    If so then we will terminate the subprocess, and raise an exception. As the result the with-block will not be
+    executed and main script will terminate. If process output does not indicate any error then we will perform a health
+    check with GET call to WireMock <em>/__admin/mappings</em> and if we get status_code 400 or higher we will
+    consider that a sign of problem, will terminate the WireMock subprocess and raise an exception. If everything is ok
+    then we will return an instance of <strong>WireMockManager</strong> class. We will implement this class later, but
+    in short it will implement all the methods required to set data, reset, shutdown, and making calls to WireMock Server.
+</p>
+
+<p>
+    <em>__exit__</em> method has a very specific signature dictated by Python, it should exc_type, exc_val, exc_tb as
+    arguments. these arguments describe a possible exception and __exit__ method should implement what should be done
+    with the exception if any occur. The main decision here is to whether handle exception and do not let it bubble up or
+    let the exception propagate and be raised outside from with-block. Here we will check whether an exception occurred
+    and if so we will log the exception. After logging we will try to shutdown WireMock Server by POST to
+    <em>/__admin/shutdown</em> with empty body. We do not check the result and move on to terminate WireMock subprocess.
+</p>
+
+<pre class="prettyprint"><code>from subprocess import PIPE, Popen, STDOUT
+from pathlib import Path
+
+from WireMockTutorial.Utils import logger
+from WireMockTutorial.Utils.wm_exceptions import WireMockStartException
+from WireMockTutorial.Utils.WireMockCommunication import WireMockManager
+
+class WireMockContext:
+    def __init__(self, jar_location: str, root_dir: str, port: int = 9999, verbose: bool = True):
+        self.jar_location = Path(jar_location).absolute()
+        self.root_dir = Path(root_dir).absolute()
+        self.command = f"java -jar {jar_location} --port {port} " \
+                       f"--global-response-templating --root-dir {root_dir}"
+        if verbose:
+            self.command += " --verbose"
+        self._process = None
+
+    def __enter__(self):
+        self._process = Popen(self.command.split(), stdout=PIPE, stderr=STDOUT)
+        result = next(iter(self._process.stdout.readline, b"")).decode("utf-8")
+        if result and result.strip().startswith("Error"):
+            try:
+                self._process.terminate()
+            finally:
+                raise WireMockStartException("Error occurred trying to start WireMock Process."
+                                             f"\n\tDetail: {result}")
+        WireMockManager.check_wiremock_running()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            logger.exception(f"Error while running WireMock: {exc_type.__name__}: {exc_val}")
+        try:
+            WireMockManager.shutdown_wiremock()
+        finally:
+            try:
+                self._process.terminate()
+            finally:
+                return False</code></pre>
+
+<p>
+    Now that we have our WireMock ContextManager class implemented we can use it in our test by with-block pattern:
+</p>
+
+<pre class="prettyprint"><code>with WireMockContext(wiremock_jar_path, root_path) as wm:
+    wm.reset_mappings_and_requests_log()</code></pre>
+
+<p>
+    At the first line an instance of WireMockContext will be created, __enter__ method will be called on that instance
+    and result will be returned and saved in global scope as wm. After the first line, inside the with-block, wm object
+    is available and we are using it to reset all the mappings and request logs (will see the implementation of these
+    two methods later in this section). When with-block is completed __exit__ method of WireMockContext instance (which
+    is not the same as wm object) is called and we in __exit__ we check for exceptions, shutdown WireMock Server, and
+    terminate WireMock subprocess.
+</p>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="SettingNewStubDataInWireMockViaREST">
+    <strong>
+      Setting New Stub Data in WireMock via REST in Python
+    </strong>
+  </h4>
+</div>
+
+<p>
+    We can implement functionality that are required to manage WireMock Server in a class to make it more clear and easier
+    to work with WireMock instance. Here we have implemented "WireMockManager" class with class methods to set mock data
+    into WireMock mappings, calling a mocked endpoint and return the response, reset mappings and request logs, health check
+    , and shutting WireMock instance down.
+</p>
+
+<p>
+    For setting new mock data into an endpoint we use WireMock template for POST to adminUrl/mappings, and the request
+    body is converted to JSON before sent, and after it we check if we have Http status_code higher than 400 or not. If
+    status_code is equal or above 400 then something went wrong and we raise an exception (our custom
+    WireMockConnectionException exception with appropriate error message) otherwise we return the response object.
+</p>
+
+<pre class="prettyprint"><code>class WireMockManager:
+    @classmethod
+    def set_new_data_in_wm(cls, url, headers=None, body=None,
+                           method="POST", status_code=200):
+        msg = {
+            "request": {
+                "method": method,
+                "url": url
+            },
+            "response": {
+                "status": int(status_code),
+                "body": json.dumps(body, indent=4),
+                "headers": headers
+            }
+        }
+        msg = json.dumps(msg, indent=4)
+        logger.debug(f"New response body to set in '{url}':\n{msg}")
+
+        res = requests.post(WireMockUrls.MAPPINGS_URL, msg, headers={"Content-Type": "application/json"})
+        if 400 <= res.status_code:
+            raise WireMockConnectionException("Failed to set new data into WireMock: "
+                                              f"{response_to_json(res)}")
+        logger.info(f"Successfully set new data for {url}.")
+        return res
+
+    @classmethod
+    def call_mocked_service(cls, url, request_body=None, request_headers=None,
+                            method="POST", message_type="json"):
+        url = WireMockUrls.WIREMOCK_URL + url
+        if message_type == "json":
+            request_body = json.dumps(request_body)
+        return requests.request(method=method, url=url,
+                                headers=request_headers, data=request_body)</code></pre>
+
+
+<p>
+    In a test scenario we will put test body inside the WireMock context manager that we have created before. Below we
+    see an example of simple test case where we reset all the mappings and request logs before test, then in test
+    endpoint we put a simple and static response of "Hello Multiverse!" and then call the endpoint as mocked service and
+    log the response which should be what we set in WireMock earlier.
+</p>
+
+<pre class="prettyprint"><code>with WireMockContext(wiremock_jar_path, root_path) as wm:
+    wm.reset_mappings_and_requests_log()
+
+    """ Let's put some simple stub which return Hello Multiverse for every request """
+    wm.set_new_data_in_wm(test_url, body="Hello Multiverse!")
+
+    rpy = wm.call_mocked_service(test_url)
+    logger.info(rpy.content.decode("utf-8"))
+
+========================= Console ==========================
+21-04-04 05:01:41:WMLogger:WireMockCommunication.py(60):INFO: WireMock Server is running.
+21-04-04 05:01:41:WMLogger:WireMockCommunication.py(30):INFO: Successfully set new data for /pythonTest.
+21-04-04 05:01:41:WMLogger:ApiTest.py(18):INFO: "Hello Multiverse!"
+21-04-04 05:01:41:WMLogger:WireMockCommunication.py(30):INFO: Successfully set new data for /pythonTest.
+21-04-04 05:01:41:WMLogger:ApiTest.py(26):INFO: rpy =>
+{
+    "message": "Hello Taher!"
+}
+21-04-04 05:01:41:WMLogger:WireMockCommunication.py(53):WARNING: WireMock Server was shutdown successfully.</code></pre>
+
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-sub-section-title">
+  <h4 id="UnitTestsForWireMockProject">
+    <strong>
+      UnitTests for WireMock Project
+    </strong>
+  </h4>
+</div>
+
+<p>
+    To make sure that our WireMock context manager and helpers are working correctly we can create unit tests for our
+    project. In this article we use unittest module in Python to create two sets of tests, first to verify WireMock context
+    manager is working correctly, it raises the expected exception if something is incorrect and it shuts down the WireMock
+    server after context manager block is completed. the second set of tests will check if we can put mock data in server and
+    if we get what was expected from our stubbed services. We created a new directory called UnitTests, and inside two files
+    test_wiremock_start_shutdown.py and test_wiremock_stubbing.py. The name of files start with test because by default
+    PyCharm (IDE that we are using) picks up this pattern as test script. We also disable logging at the beginning of all
+    tests because we are not going to use those logs for monitoring or debugging since unittest module will give us enough data
+    if a testcase fails.
+</p>
+
+<pre class="prettyprint"><code>class TestWireMockStartAndShutdown(unittest.TestCase):
+    wiremock_jar_path = "../docs/wiremock-standalone-2.27.2.jar"
+    root_path = "../wireMockRoot"
+
+    @classmethod
+    def setUpClass(cls):
+        logging.disable(logging.CRITICAL)
+
+    @classmethod
+    def tearDownClass(cls):
+        logging.disable(logging.NOTSET)
+
+    def test_wrong_path_exception(self):
+        with self.assertRaises(WireMockConnectionException):
+            with WireMockContext("./wrong_path", self.root_path) as wm:
+                pass
+
+    def test_successful_start(self):
+        try:
+            with WireMockContext(self.wiremock_jar_path, self.root_path) as wm:
+                wm.check_wiremock_running()
+        except WireMockConnectionException:
+            self.fail("WireMock Server not running after initialization of context.")
+
+    def test_wiremock_shutdown(self):
+        with WireMockContext(self.wiremock_jar_path, self.root_path) as wm:
+            pass
+        self.assertRaises(WireMockConnectionException, wm.check_wiremock_running)</code></pre>
+
+<p>
+    In the first testcase we check whether our WireMock context manager raises "WireMockConnectionException" exception if
+    we have incorrect jar path for WireMock jar. the second test checks if context manager shuts down WireMock server
+    after with-block is completed. If WireMock server is still running after with-block them we will be able to have a
+    successful health check, but normally we expect an WireMockConnectionException exception.
+</p>
+
+<p>
+    For testing mocked responses we need to create many testcases to have good coverage, but for the sake of illustration
+    we have implemented two testcases, first for static response, and second for simple echo property from request in
+    response.
+</p>
+
+<pre class="prettyprint"><code>class TestWireMockStubbing(unittest.TestCase):
+    wiremock_jar_path = "../docs/wiremock-standalone-2.27.2.jar"
+    root_path = "../wireMockRoot"
+    test_url = "/pythonTest"
+
+    def test_fixed_response(self):
+        with WireMockContext(self.wiremock_jar_path, self.root_path) as wm:
+            wm.set_new_data_in_wm(self.test_url, body="Hello Multiverse!")
+            rpy = wm.call_mocked_service(self.test_url)
+            self.assertEqual(rpy.content.decode("utf-8"), '"Hello Multiverse!"')
+
+    def test_echo_from_json_request(self):
+        with WireMockContext(self.wiremock_jar_path, self.root_path) as wm:
+            body = &#123;&quot;message&quot;: &quot;Hello &#123;&#123;jsonPath request.body '&#65284;.name'&#125;&#125;!"}
+            expected_rpy_body = {"message": "Hello Joe!"}
+            wm.set_new_data_in_wm(self.test_url, body=body)
+            rpy = wm.call_mocked_service(self.test_url, request_body={"name": "Joe"})
+            self.assertDictEqual(rpy.json(), expected_rpy_body)</code></pre>
+
+<p>Hope that this article can help you using WireMock and thanks for your time.</p>
+<!-- ----------------------------------------------------------------------- -->
+{% endblock content %}
