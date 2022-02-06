@@ -7,6 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
   <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap" rel="stylesheet">
+
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Vollkorn&display=swap" rel="stylesheet">
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
   <script src="https://kit.fontawesome.com/82848abd31.js" crossorigin="anonymous"></script>
   <link rel="stylesheet" type="text/css" href="{% static 'blog/blog_main.css' %}">
@@ -17,43 +21,24 @@
 <body>
   {% include 'profile_app/navbar.html' %}
 
-  <!--=====================================================================-->
-  <!--==============================Sidebar================================-->
   <div class="sidebar-container">
     <div class="sidebar-logo">
-      Topics
+      Topics ({{ TopicsCount }} posts)
     </div>
 
-    <ul class="sidebar-navigation">
+    <ul class="sidebar-navigation" id="sidebar-main-nav">
       <li class="header"></li>
-      {% for tag, occurances in AllTags.items %}
-        {% if tag.name in ActiveTags %}
-          <li class="active">
-            <a href="{% url 'tag-articles' tag.slug %}" class="active">
-          {% else %}
+      {% for tag, data in AllTags.items %}
           <li>
-            <a href="{% url 'tag-articles' tag.slug %}" class="whiteAnchor">
-          {% endif %}
-<!--          <a href="{% url 'tag-articles' tag.slug %}" class="whiteAnchor active">-->
-            {{ tag.name }}
-            {% if occurances > 1 %}
-              (<small>{{ occurances }} Posts</small>)
-            {% else %}
-              (<small>{{ occurances }} Post</small>)
-            {% endif %}
-          </a>
-        </li>
+              <a href="{% url 'tag-articles' tag.slug %}" class="whiteAnchor">
+                {{ tag.name }} (<small>{{ data }} Post{{ data|pluralize:",s" }}</small>)
+              </a>
+          </li>
       {% endfor %}
-      <!-- <li class="header">Another Menu</li>
-      <li>
-        <a href="#">
-          <i class="fa fa-users" aria-hidden="true"></i> Friends
-        </a>
-      </li> -->
     </ul>
   </div>
 
-  <div class="content-container">  
+    <div class="content-container">
     <div class="container-fluid">
       <div class="col-md-10 col-sm-12">
 
@@ -108,13 +93,34 @@
         {% endif %}
         {% endif %}
       </div>
-  
+
     </div>
   </div>
+
+    {% if messages %}
+    <div id="articles-container">
+    <div class="row align-items-center justify-content-sm-center">
+      <div class="col-sm-12 d-flex">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+          {{ message }}
+          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+    {% endif %}
+
+
+
 
   <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  <script src="{% static 'blog/blog_sidebar.js' %}"></script>
 </body>
 
 </html>

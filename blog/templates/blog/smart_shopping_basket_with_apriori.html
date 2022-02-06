@@ -1,0 +1,26 @@
+{% extends "blog/article_base.html" %}
+{% load static %}
+{% block content %}
+
+<br>
+
+<div class="card bg-light border-dark text-center mb-3">
+  <img class="card-img-top" src="{% static 'blog/images/shopping_list_title_image.jpg' %}" alt="Shopping List Image">
+  <div class="card-body" style="padding:0.5rem;">
+    <small>
+        Photo by <a href="https://unsplash.com/@alschim?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Alexander Schimmeck</a>
+      on <a href="https://unsplash.com/s/photos/shopping-basket?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText">Unsplash</a>
+      </small>
+  </div>
+</div>
+
+<!-- ----------------------------------------------------------------------- -->
+<div class="article-section-title">
+  <h4 class="text-center"><strong>Smart Shopping List Application with Flask and Apriori Algorithm</strong></h4>
+</div>
+
+
+
+<p>
+<!-- ----------------------------------------------------------------------- -->
+{% endblock content %}
