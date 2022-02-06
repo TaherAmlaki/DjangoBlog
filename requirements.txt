@@ -1,7 +1,7 @@
 asgiref==3.2.7
 astroid==2.4.2
 colorama==0.4.3
-Django==3.0.5
+Django==3.1.14
 django-crispy-forms==1.9.0
 django-wkhtmltopdf==3.3.0
 html2pdf==0.1
