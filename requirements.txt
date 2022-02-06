@@ -16,7 +16,7 @@ psycopg2==2.8.6
 pylint==2.5.3
 PyPDF2==1.26.0
 pytz==2019.3
-reportlab==3.5.42
+reportlab==3.5.55
 six==1.15.0
 sqlparse==0.3.1
 toml==0.10.1
